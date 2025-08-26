@@ -125,7 +125,7 @@ let WDwdataFtp = async(st, opt = {}) => {
         useSimulateFiles = false
     }
 
-    //fdDwStorageTemp, 單次下載存放資料夾
+    //fdDwStorageTemp, 單次下載檔案存放資料夾
     let fdDwStorageTemp = get(opt, 'fdDwStorageTemp')
     if (!isestr(fdDwStorageTemp)) {
         fdDwStorageTemp = `./_dwStorageTemp`
@@ -134,7 +134,7 @@ let WDwdataFtp = async(st, opt = {}) => {
         fsCreateFolder(fdDwStorageTemp)
     }
 
-    //fdDwStorage, 合併儲存txt資料夾
+    //fdDwStorage, 合併儲存檔案資料夾
     let fdDwStorage = get(opt, 'fdDwStorage')
     if (!isestr(fdDwStorage)) {
         fdDwStorage = `./_dwStorage`
