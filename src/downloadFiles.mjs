@@ -58,6 +58,7 @@ let downloadFiles = async(st, fdDwStorageTemp, fdDwStorage, opt = {}) => {
                     console.log('ftp.syncToLocal p', p.name, p.progress)
                 },
                 {
+                    levelLimit: 1, //僅下載第1層內檔案
                     forceOverwriteWhenSync: true, //強制全下載進行複寫本機數據
                 },
             )
