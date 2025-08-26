@@ -29,8 +29,8 @@ import downloadFiles from './downloadFiles.mjs'
  * @param {String} [st.fdIni='./'] 輸入同步資料夾字串，預設'./'
  * @param {Object} [opt={}] 輸入設定物件，預設{}
  * @param {Boolean} [opt.useExpandOnOldFiles=false] 輸入來源檔案是否僅為增量檔案布林值，預設false
- * @param {String} [opt.fdDwStorageTemp='./_dwStorageTemp'] 輸入單次下載txt存放資料夾字串，預設'./_dwStorageTemp'
- * @param {String} [opt.fdDwStorage='./_dwStorage'] 輸入合併儲存txt資料夾字串，預設'./_dwStorage'
+ * @param {String} [opt.fdDwStorageTemp='./_dwStorageTemp'] 輸入單次下載檔案存放資料夾字串，預設'./_dwStorageTemp'
+ * @param {String} [opt.fdDwStorage='./_dwStorage'] 輸入合併儲存檔案資料夾字串，預設'./_dwStorage'
  * @param {String} [opt.fdDwAttime='./_dwAttime'] 輸入當前下載供比對hash用之數據資料夾字串，預設'./_dwAttime'
  * @param {String} [opt.fdDwCurrent='./_dwCurrent'] 輸入已下載供比對hash用之數據資料夾字串，預設'./_dwCurrent'
  * @param {String} [opt.fdResult='./_result'] 輸入已下載數據所連動生成數據資料夾字串，預設'./_result'
