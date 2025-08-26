@@ -324,7 +324,6 @@ let WDwdataFtp = async(st, opt = {}) => {
     let funRemoveDef = async(v) => {
 
         let fd = `${fdResult}/${v.id}`
-
         if (fsIsFolder(fd)) {
             fsDeleteFolder(fd)
         }
@@ -338,10 +337,10 @@ let WDwdataFtp = async(st, opt = {}) => {
     let funAddDef = async(v) => {
 
         let fd = `${fdResult}/${v.id}`
-
-        if (fsIsFolder(fd)) {
-            fsCleanFolder(fd)
+        if (!fsIsFolder(fd)) {
+            fsCreateFolder(fd)
         }
+        fsCleanFolder(fd)
 
         let fpStorage = `${fdDwStorage}/${v.id}` //fdDwStorage內v.id為實際檔案, fpStorage為指向實際檔案路徑
         let fpResult = `${fd}/${v.id}`
@@ -356,10 +355,10 @@ let WDwdataFtp = async(st, opt = {}) => {
     let funModifyDef = async(v) => {
 
         let fd = `${fdResult}/${v.id}`
-
-        if (fsIsFolder(fd)) {
-            fsCleanFolder(fd)
+        if (!fsIsFolder(fd)) {
+            fsCreateFolder(fd)
         }
+        fsCleanFolder(fd)
 
         let fpStorage = `${fdDwStorage}/${v.id}` //fdDwStorage內v.id為實際檔案, fpStorage為指向實際檔案路徑
         let fpResult = `${fd}/${v.id}`
