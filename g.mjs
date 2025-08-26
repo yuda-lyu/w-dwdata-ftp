@@ -1,0 +1,72 @@
+// import path from 'path'
+// import fs from 'fs'
+// import _ from 'lodash-es'
+import w from 'wsemi'
+import WDwdataFtp from './src/WDwdataFtp.mjs'
+
+
+let st = {
+    'hostname': '{hostname}',
+    'port': 21,
+    'username': '{username}',
+    'password': '{password}',
+    'fdIni': './'
+}
+// console.log('st', st)
+
+//fdDwStorageTemp
+let fdDwStorageTemp = `./_dwStorageTemp`
+w.fsCleanFolder(fdDwStorageTemp)
+
+//fdDwStorage
+let fdDwStorage = `./_dwStorage`
+w.fsCleanFolder(fdDwStorage)
+
+//fdDwAttime
+let fdDwAttime = `./_dwAttime`
+w.fsCleanFolder(fdDwAttime)
+
+//fdDwCurrent
+let fdDwCurrent = `./_dwCurrent`
+w.fsCleanFolder(fdDwCurrent)
+
+//fdResult
+let fdResult = './_result'
+w.fsCleanFolder(fdResult)
+
+let opt = {
+    useExpandOnOldFiles: false, //true, false
+    fdDwStorageTemp,
+    fdDwStorage,
+    fdDwAttime,
+    fdDwCurrent,
+    fdResult,
+    // funDownload,
+    // funGetCurrent,
+    // funRemove,
+    // funAdd,
+    // funModify,
+}
+let ev = await WDwdataFtp(st, opt)
+    .catch((err) => {
+        console.log(err)
+    })
+ev.on('change', (msg) => {
+    delete msg.type
+    console.log('change', msg)
+})
+// change { event: 'start', msg: 'running...' }
+// change { event: 'proc-callfun-download', msg: 'start...' }
+// change { event: 'proc-callfun-download', msg: 'done' }
+// change { event: 'proc-callfun-getCurrent', msg: 'start...' }
+// change { event: 'proc-callfun-getCurrent', msg: 'done' }
+// change { event: 'compare', msg: 'start...' }
+// change { event: 'compare', msg: 'done' }
+// change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'start...' }
+// change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'done' }
+// change { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'start...' }
+// change { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'done' }
+// ...
+
+
+//node g.mjs
