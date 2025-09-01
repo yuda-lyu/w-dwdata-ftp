@@ -1,6 +1,6 @@
 {
   "name": "w-dwdata-ftp",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "main": "dist/w-dwdata-ftp.umd.js",
   "dependencies": {
     "axios": "^1.11.0",

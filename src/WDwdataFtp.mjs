@@ -4,7 +4,9 @@ import each from 'lodash-es/each.js'
 import cloneDeep from 'lodash-es/cloneDeep.js'
 import isbol from 'wsemi/src/isbol.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
+import isp0int from 'wsemi/src/isp0int.mjs'
 import isfun from 'wsemi/src/isfun.mjs'
+import cdbl from 'wsemi/src/cdbl.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
 import fsIsFolder from 'wsemi/src/fsIsFolder.mjs'
 import fsCopyFile from 'wsemi/src/fsCopyFile.mjs'
@@ -41,6 +43,7 @@ import downloadFiles from './downloadFiles.mjs'
  * @param {Function} [opt.funAdd=null] 輸入當有新資料時，需要連動處理之函數，預設null
  * @param {Function} [opt.funModify=null] 輸入當有資料需更新時，需要連動處理之函數，預設null
  * @param {Function} [opt.funRemove=null] 輸入當有資料需刪除時，需要連動處理之函數，預設null
+ * @param {Number} [opt.timeToleranceRemove=3600000] 輸入刪除任務之防抖時長，單位ms，預設3600000，約1hr
  * @returns {Object} 回傳事件物件，可呼叫函數on監聽change事件
  * @example
  *
@@ -202,6 +205,13 @@ let WDwdataFtp = async(st, opt = {}) => {
 
     //funRemove
     let funRemove = get(opt, 'funRemove')
+
+    //timeToleranceRemove
+    let timeToleranceRemove = get(opt, 'timeToleranceRemove')
+    if (!isp0int(timeToleranceRemove)) {
+        timeToleranceRemove = 60 * 60 * 1000
+    }
+    timeToleranceRemove = cdbl(timeToleranceRemove)
 
     //treeFilesAndGetHashs
     let treeFilesAndGetHashs = (fd) => {
@@ -381,6 +391,7 @@ let WDwdataFtp = async(st, opt = {}) => {
         funRemove,
         funAdd,
         funModify,
+        timeToleranceRemove,
     }
     let ev = await WDwdataBuilder(optBdr)
 
