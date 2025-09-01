@@ -146,7 +146,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WDwdataFtp.mjs.html">WDwdataFtp.mjs</a>, <a href="WDwdataFtp.mjs.html#line117">line 117</a>
+        <a href="WDwdataFtp.mjs.html">WDwdataFtp.mjs</a>, <a href="WDwdataFtp.mjs.html#line118">line 118</a>
     </li></ul></dd>
     
 
@@ -193,7 +193,7 @@
 
     <h5 class="h5-examples">Example</h5>
     
-    <pre class="prettyprint"><code>import w from 'wsemi'import WDwdataFtp from './src/WDwdataFtp.mjs'let st = {    'hostname': '{hostname}',    'port': 21,    'username': '{username}',    'password': '{password}',    'fdIni': './'}// console.log('st', st)//fdDwStorageTemplet fdDwStorageTemp = `./_dwStorageTemp`w.fsCleanFolder(fdDwStorageTemp)//fdDwStoragelet fdDwStorage = `./_dwStorage`w.fsCleanFolder(fdDwStorage)//fdDwAttimelet fdDwAttime = `./_dwAttime`w.fsCleanFolder(fdDwAttime)//fdDwCurrentlet fdDwCurrent = `./_dwCurrent`w.fsCleanFolder(fdDwCurrent)//fdResultlet fdResult = './_result'w.fsCleanFolder(fdResult)let opt = {    useExpandOnOldFiles: false, //true, false    fdDwStorageTemp,    fdDwStorage,    fdDwAttime,    fdDwCurrent,    fdResult,    // funDownload,    // funGetCurrent,    // funRemove,    // funAdd,    // funModify,}let ev = await WDwdataFtp(st, opt)    .catch((err) => {        console.log(err)    })ev.on('change', (msg) => {    delete msg.type    console.log('change', msg)})// change { event: 'start', msg: 'running...' }// change { event: 'proc-callfun-download', msg: 'start...' }// change { event: 'proc-callfun-download', msg: 'done' }// change { event: 'proc-callfun-getCurrent', msg: 'start...' }// change { event: 'proc-callfun-getCurrent', msg: 'done' }// change { event: 'compare', msg: 'start...' }// change { event: 'compare', msg: 'done' }// change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'start...' }// change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'done' }// change { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'start...' }// change { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'done' }// ...</code></pre>
+    <pre class="prettyprint"><code>import w from 'wsemi'import WDwdataFtp from './src/WDwdataFtp.mjs'let st = {    'hostname': '{hostname}',    'port': 21,    'username': '{username}',    'password': '{password}',    'fdIni': './'}// console.log('st', st)//fdDwStorageTemplet fdDwStorageTemp = `./_dwStorageTemp`w.fsCleanFolder(fdDwStorageTemp)//fdDwStoragelet fdDwStorage = `./_dwStorage`w.fsCleanFolder(fdDwStorage)//fdDwAttimelet fdDwAttime = `./_dwAttime`w.fsCleanFolder(fdDwAttime)//fdDwCurrentlet fdDwCurrent = `./_dwCurrent`w.fsCleanFolder(fdDwCurrent)//fdResultlet fdResult = './_result'w.fsCleanFolder(fdResult)let opt = {    useExpandOnOldFiles: false, //true, false    fdDwStorageTemp,    fdDwStorage,    fdDwAttime,    fdDwCurrent,    fdResult,    // funDownload,    // funGetCurrent,    // funRemove,    // funAdd,    // funModify,}let ev = await WDwdataFtp(st, opt)    .catch((err) => {        console.log(err)    })ev.on('change', (msg) => {    delete msg.type    console.log('change', msg)})// change { event: 'start', msg: 'running...' }// change { event: 'proc-callfun-download', msg: 'start...' }// change { event: 'proc-callfun-download', msg: 'done' }// change { event: 'proc-callfun-getCurrent', msg: 'start...' }// change { event: 'proc-callfun-getCurrent', msg: 'done' }// change { event: 'compare', msg: 'start...' }// change { event: 'compare', numRemove: 0, numAdd: 2, numModify: 0, numSame: 0, msg: 'done' }// change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'start...' }// change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'done' }// change { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'start...' }// change { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'done' }// ...</code></pre>
 
 
 
@@ -836,6 +836,46 @@
 
         <tr>
             
+                <td class="name"><code>fdTaskCpActualSrc</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>'./_taskCpActualSrc'</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入任務狀態之來源端完整資料夾字串，預設'./_taskCpActualSrc'</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
                 <td class="name"><code>fdTaskCpSrc</code></td>
             
 
@@ -1224,7 +1264,7 @@
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.4</a> on Mon Sep 01 2025 12:40:25 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.4</a> on Mon Sep 01 2025 15:11:08 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
