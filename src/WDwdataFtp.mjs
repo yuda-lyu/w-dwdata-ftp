@@ -43,7 +43,7 @@ import downloadFiles from './downloadFiles.mjs'
  * @param {Function} [opt.funAdd=null] 輸入當有新資料時，需要連動處理之函數，預設null
  * @param {Function} [opt.funModify=null] 輸入當有資料需更新時，需要連動處理之函數，預設null
  * @param {Function} [opt.funRemove=null] 輸入當有資料需刪除時，需要連動處理之函數，預設null
- * @param {Number} [opt.timeToleranceRemove=3600000] 輸入刪除任務之防抖時長，單位ms，預設3600000，約1hr
+ * @param {Number} [opt.timeToleranceRemove=0] 輸入刪除任務之防抖時長，單位ms，預設0，代表不使用
  * @returns {Object} 回傳事件物件，可呼叫函數on監聽change事件
  * @example
  *
@@ -209,7 +209,7 @@ let WDwdataFtp = async(st, opt = {}) => {
     //timeToleranceRemove
     let timeToleranceRemove = get(opt, 'timeToleranceRemove')
     if (!isp0int(timeToleranceRemove)) {
-        timeToleranceRemove = 60 * 60 * 1000
+        timeToleranceRemove = 0
     }
     timeToleranceRemove = cdbl(timeToleranceRemove)
 
