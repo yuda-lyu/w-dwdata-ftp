@@ -57,9 +57,9 @@ ev.on('change', (msg) => {
 })
 // change { event: 'start', msg: 'running...' }
 // change { event: 'proc-callfun-download', msg: 'start...' }
-// change { event: 'proc-callfun-download', msg: 'done' }
+// change { event: 'proc-callfun-download', num: 2, msg: 'done' }
 // change { event: 'proc-callfun-getCurrent', msg: 'start...' }
-// change { event: 'proc-callfun-getCurrent', msg: 'done' }
+// change { event: 'proc-callfun-getCurrent', num: 0, msg: 'done' }
 // change { event: 'compare', msg: 'start...' }
 // change { event: 'compare', msg: 'done' }
 // change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'start...' }
