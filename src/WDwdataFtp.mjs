@@ -1,6 +1,7 @@
 import fs from 'fs'
 import get from 'lodash-es/get.js'
 import each from 'lodash-es/each.js'
+import size from 'lodash-es/size.js'
 import cloneDeep from 'lodash-es/cloneDeep.js'
 import isbol from 'wsemi/src/isbol.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
@@ -8,10 +9,12 @@ import isp0int from 'wsemi/src/isp0int.mjs'
 import isfun from 'wsemi/src/isfun.mjs'
 import cdbl from 'wsemi/src/cdbl.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
+import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
 import fsIsFolder from 'wsemi/src/fsIsFolder.mjs'
 import fsCopyFile from 'wsemi/src/fsCopyFile.mjs'
 import fsCleanFolder from 'wsemi/src/fsCleanFolder.mjs'
 import fsCreateFolder from 'wsemi/src/fsCreateFolder.mjs'
+import fsCopyFolder from 'wsemi/src/fsCopyFolder.mjs'
 import fsDeleteFolder from 'wsemi/src/fsDeleteFolder.mjs'
 import fsTreeFolder from 'wsemi/src/fsTreeFolder.mjs'
 import fsGetFileXxHash from 'wsemi/src/fsGetFileXxHash.mjs'
@@ -259,18 +262,21 @@ let WDwdataFtp = async(st, opt = {}) => {
         return ltdt
     }
 
+    //vfpsDw
+    let vfpsDw = []
+
     //funDownloadDef
     let funDownloadDef = async() => {
 
-        //vfps, 為新增檔案清單, 其內path是指向fdDwStorageTemp內檔案, 執行完downloadFiles後檔案亦已有另外儲存至fdDwStorage
-        let vfps = await downloadFiles(st, fdDwStorageTemp, fdDwStorage, {
+        //vfpsDw, 為下載所得新增檔案清單, 其內path是指向fdDwStorageTemp內檔案, 執行完downloadFiles後檔案亦已有另外儲存至fdDwStorage
+        vfpsDw = await downloadFiles(st, fdDwStorageTemp, fdDwStorage, {
             useExpandOnOldFiles,
             useSimulateFiles,
         })
-        // console.log('vfps', vfps[0], size(vfps))
+        // console.log('vfpsDw', vfpsDw[0], size(vfpsDw))
 
-        //ltdtHashNewTemp, 計算檔案hash值, 為新hash
-        let ltdtHashNewTemp = await pmSeries(vfps, async(v) => {
+        //ltdtHashNewTemp, 計算新增檔案hash值
+        let ltdtHashNewTemp = await pmSeries(vfpsDw, async(v) => {
             let id = v.name //用檔名做id
             let hash = await fsGetFileXxHash(v.path) //檔案來源是位於fdDwStorageTemp
             return {
@@ -395,6 +401,65 @@ let WDwdataFtp = async(st, opt = {}) => {
         timeToleranceRemove,
     }
     let ev = await WDwdataBuilder(optBdr)
+
+    //srlog
+    let srlog = ev.srlog
+
+    //end
+    ev.on('end', () => {
+
+        try {
+
+            srlog.info({ event: 'move-files-to-storage', msg: 'start...' })
+
+            //check, end代表成功或失敗結束, 故可能下載失敗size(vfpsDw)=0
+            if (size(vfpsDw) === 0) {
+                throw new Error(`no files`)
+            }
+
+            //useExpandOnOldFiles
+            if (useExpandOnOldFiles) {
+
+                //複製fdDwStorageTemp內所下載檔案至合併儲存資料夾fdDwStorage
+                each(vfpsDw, (v) => {
+
+                    //fsCopyFile
+                    let fpSrc = v.path
+                    let fpTar = `${fdDwStorage}/${v.name}`
+                    let r = fsCopyFile(fpSrc, fpTar)
+
+                    //check
+                    if (r.error) {
+                        throw new Error(r.error)
+                    }
+
+                })
+
+            }
+            else {
+
+                //清空合併儲存資料夾fdDwStorage
+                fsCleanFolder(fdDwStorage)
+
+                //複製fdDwStorageTemp內所有下載檔案至合併儲存資料夾fdDwStorage
+                let r = fsCopyFolder(fdDwStorageTemp, fdDwStorage)
+
+                //check
+                if (r.error) {
+                    throw new Error(r.error)
+                }
+
+            }
+
+            srlog.info({ event: 'move-files-to-storage', msg: 'done' })
+
+        }
+        catch (err) {
+            console.log(err)
+            srlog.error({ event: 'move-files-to-storage', msg: getErrorMessage(err) })
+        }
+
+    })
 
     return ev
 }

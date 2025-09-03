@@ -79,7 +79,7 @@ ev.on('change', (msg) => {
 // change { event: 'proc-callfun-getCurrent', msg: 'start...' }
 // change { event: 'proc-callfun-getCurrent', msg: 'done' }
 // change { event: 'compare', msg: 'start...' }
-// change { event: 'compare', msg: 'done' }
+// change { event: 'compare', numRemove: 0, numAdd: 2, numModify: 0, numSame: 0, msg: 'done' }
 // change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'start...' }
 // change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'done' }
 // change { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'start...' }

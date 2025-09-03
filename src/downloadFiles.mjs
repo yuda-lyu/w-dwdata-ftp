@@ -1,13 +1,10 @@
 import get from 'lodash-es/get.js'
-import each from 'lodash-es/each.js'
 import size from 'lodash-es/size.js'
 import filter from 'lodash-es/filter.js'
 import isbol from 'wsemi/src/isbol.mjs'
 import fsCleanFolder from 'wsemi/src/fsCleanFolder.mjs'
 import WFtp from 'w-ftp/src/WFtp.mjs'
 import fsTreeFolder from 'wsemi/src/fsTreeFolder.mjs'
-import fsCopyFile from 'wsemi/src/fsCopyFile.mjs'
-import fsCopyFolder from 'wsemi/src/fsCopyFolder.mjs'
 
 
 let downloadFiles = async(st, fdDwStorageTemp, fdDwStorage, opt = {}) => {
@@ -105,42 +102,42 @@ let downloadFiles = async(st, fdDwStorageTemp, fdDwStorage, opt = {}) => {
         throw new Error(errTemp)
     }
 
-    //useExpandOnOldFiles
-    if (useExpandOnOldFiles) {
+    // //useExpandOnOldFiles
+    // if (useExpandOnOldFiles) {
 
-        //複製fdDwStorageTemp內所下載檔案至合併儲存資料夾fdDwStorage
-        each(vfps, (v) => {
+    //     //複製fdDwStorageTemp內所下載檔案至合併儲存資料夾fdDwStorage
+    //     each(vfps, (v) => {
 
-            //fsCopyFile
-            let fpSrc = v.path
-            let fpTar = `${fdDwStorage}/${v.name}`
-            let r = fsCopyFile(fpSrc, fpTar)
+    //         //fsCopyFile
+    //         let fpSrc = v.path
+    //         let fpTar = `${fdDwStorage}/${v.name}`
+    //         let r = fsCopyFile(fpSrc, fpTar)
 
-            //check
-            if (r.error) {
-                console.log(r.error)
-                errTemp = r.error
-                return false //跳出
-            }
+    //         //check
+    //         if (r.error) {
+    //             console.log(r.error)
+    //             errTemp = r.error
+    //             return false //跳出
+    //         }
 
-        })
+    //     })
 
-    }
-    else {
+    // }
+    // else {
 
-        //清空合併儲存資料夾fdDwStorage
-        fsCleanFolder(fdDwStorage)
+    //     //清空合併儲存資料夾fdDwStorage
+    //     fsCleanFolder(fdDwStorage)
 
-        //複製fdDwStorageTemp內所有下載檔案至合併儲存資料夾fdDwStorage
-        let r = fsCopyFolder(fdDwStorageTemp, fdDwStorage)
+    //     //複製fdDwStorageTemp內所有下載檔案至合併儲存資料夾fdDwStorage
+    //     let r = fsCopyFolder(fdDwStorageTemp, fdDwStorage)
 
-        //check
-        if (r.error) {
-            console.log(r.error)
-            errTemp = r.error
-        }
+    //     //check
+    //     if (r.error) {
+    //         console.log(r.error)
+    //         errTemp = r.error
+    //     }
 
-    }
+    // }
 
     //check
     if (errTemp !== null) {
