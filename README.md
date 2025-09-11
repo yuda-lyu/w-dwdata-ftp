@@ -74,6 +74,8 @@ ev.on('change', (msg) => {
     console.log('change', msg)
 })
 // change { event: 'start', msg: 'running...' }
+// change { event: 'proc-callfun-afterStart', msg: 'start...' }
+// change { event: 'proc-callfun-afterStart', msg: 'done' }
 // change { event: 'proc-callfun-download', msg: 'start...' }
 // change { event: 'proc-callfun-download', msg: 'done' }
 // change { event: 'proc-callfun-getCurrent', msg: 'start...' }

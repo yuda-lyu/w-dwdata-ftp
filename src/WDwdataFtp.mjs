@@ -105,6 +105,8 @@ import downloadFiles from './downloadFiles.mjs'
  *     console.log('change', msg)
  * })
  * // change { event: 'start', msg: 'running...' }
+ * // change { event: 'proc-callfun-afterStart', msg: 'start...' }
+ * // change { event: 'proc-callfun-afterStart', msg: 'done' }
  * // change { event: 'proc-callfun-download', msg: 'start...' }
  * // change { event: 'proc-callfun-download', msg: 'done' }
  * // change { event: 'proc-callfun-getCurrent', msg: 'start...' }
@@ -386,27 +388,8 @@ let WDwdataFtp = async(st, opt = {}) => {
         funModify = funModifyDef
     }
 
-    //WDwdataBuilder
-    let optBdr = {
-        fdDwAttime,
-        fdDwCurrent,
-        fdResult,
-        fdTaskCpSrc,
-        fdLog,
-        funDownload,
-        funGetCurrent,
-        funRemove,
-        funAdd,
-        funModify,
-        timeToleranceRemove,
-    }
-    let ev = await WDwdataBuilder(optBdr)
-
-    //srlog
-    let srlog = ev.srlog
-
-    //end
-    ev.on('end', () => {
+    //funBeforeEnd
+    let funBeforeEnd = async() => {
 
         try {
 
@@ -459,7 +442,28 @@ let WDwdataFtp = async(st, opt = {}) => {
             srlog.error({ event: 'move-files-to-storage', msg: getErrorMessage(err) })
         }
 
-    })
+    }
+
+    //WDwdataBuilder
+    let optBdr = {
+        fdDwAttime,
+        fdDwCurrent,
+        fdResult,
+        fdTaskCpSrc,
+        fdLog,
+        funDownload,
+        funGetCurrent,
+        funRemove,
+        funAdd,
+        funModify,
+        funAfterStart: null,
+        funBeforeEnd,
+        timeToleranceRemove,
+    }
+    let ev = await WDwdataBuilder(optBdr)
+
+    //srlog
+    let srlog = ev.srlog
 
     return ev
 }
