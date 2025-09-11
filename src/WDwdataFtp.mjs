@@ -7,6 +7,7 @@ import isbol from 'wsemi/src/isbol.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
 import isp0int from 'wsemi/src/isp0int.mjs'
 import isfun from 'wsemi/src/isfun.mjs'
+import ispm from 'wsemi/src/ispm.mjs'
 import cdbl from 'wsemi/src/cdbl.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
@@ -47,6 +48,8 @@ import downloadFiles from './downloadFiles.mjs'
  * @param {Function} [opt.funAdd=null] 輸入當有新資料時，需要連動處理之函數，預設null
  * @param {Function} [opt.funModify=null] 輸入當有資料需更新時，需要連動處理之函數，預設null
  * @param {Function} [opt.funRemove=null] 輸入當有資料需刪除時，需要連動處理之函數，預設null
+ * @param {Function} [opt.funAfterStart=null] 輸入偵測程序剛開始啟動時，需要處理之函數，預設null
+ * @param {Function} [opt.funBeforeEnd=null] 輸入偵測程序要結束前，需要處理之函數，預設null
  * @param {Number} [opt.timeToleranceRemove=0] 輸入刪除任務之防抖時長，單位ms，預設0，代表不使用
  * @returns {Object} 回傳事件物件，可呼叫函數on監聽change事件
  * @example
@@ -211,6 +214,12 @@ let WDwdataFtp = async(st, opt = {}) => {
 
     //funRemove
     let funRemove = get(opt, 'funRemove')
+
+    //funAfterStartCall
+    let funAfterStartCall = get(opt, 'funAfterStart')
+
+    //funBeforeEndCall
+    let funBeforeEndCall = get(opt, 'funBeforeEnd')
 
     //timeToleranceRemove
     let timeToleranceRemove = get(opt, 'timeToleranceRemove')
@@ -388,8 +397,8 @@ let WDwdataFtp = async(st, opt = {}) => {
         funModify = funModifyDef
     }
 
-    //funBeforeEnd
-    let funBeforeEnd = async() => {
+    //funBeforeEndNec
+    let funBeforeEndNec = async() => {
 
         try {
 
@@ -444,7 +453,32 @@ let WDwdataFtp = async(st, opt = {}) => {
 
     }
 
-    //WDwdataBuilder
+    let funAfterStart = async() => {
+
+        if (isfun(funAfterStartCall)) {
+            let r = funAfterStartCall
+            if (ispm(r)) {
+                r = await r
+            }
+        }
+
+        //無funAfterStartNec
+
+    }
+
+    let funBeforeEnd = async() => {
+
+        await funBeforeEndNec()
+
+        if (isfun(funBeforeEndCall)) {
+            let r = funBeforeEndCall
+            if (ispm(r)) {
+                r = await r
+            }
+        }
+
+    }
+
     let optBdr = {
         fdDwAttime,
         fdDwCurrent,
@@ -456,7 +490,7 @@ let WDwdataFtp = async(st, opt = {}) => {
         funRemove,
         funAdd,
         funModify,
-        funAfterStart: null,
+        funAfterStart,
         funBeforeEnd,
         timeToleranceRemove,
     }
