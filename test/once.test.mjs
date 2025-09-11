@@ -73,20 +73,6 @@ describe('once', function() {
             // console.log('ms', ms)
             pm.resolve(ms)
         })
-        // change { event: 'start', msg: 'running...' }
-        // change { event: 'proc-callfun-afterStart', msg: 'start...' }
-        // change { event: 'proc-callfun-afterStart', msg: 'done' }
-        // change { event: 'proc-callfun-download', msg: 'start...' }
-        // change { event: 'proc-callfun-download', msg: 'done' }
-        // change { event: 'proc-callfun-getCurrent', msg: 'start...' }
-        // change { event: 'proc-callfun-getCurrent', msg: 'done' }
-        // change { event: 'compare', msg: 'start...' }
-        // change { event: 'compare', numRemove: 0, numAdd: 2, numModify: 0, numSame: 0, msg: 'done' }
-        // change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'start...' }
-        // change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'done' }
-        // change { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'start...' }
-        // change { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'done' }
-        // ...
 
         return pm
     }

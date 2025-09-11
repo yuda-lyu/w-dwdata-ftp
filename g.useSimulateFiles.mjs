@@ -69,7 +69,6 @@ let run = async() => {
             console.log(err)
         })
     ev.on('change', (msg) => {
-
         delete msg.type
         delete msg.timeRunStart
         delete msg.timeRunEnd
