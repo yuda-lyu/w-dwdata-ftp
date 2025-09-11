@@ -279,8 +279,8 @@ let WDwdataFtp = async(st, opt = {}) => {
     //funDownloadDef
     let funDownloadDef = async() => {
 
-        //vfpsDw, 為下載所得新增檔案清單, 其內path是指向fdDwStorageTemp內檔案, 執行完downloadFiles後檔案亦已有另外儲存至fdDwStorage
-        vfpsDw = await downloadFiles(st, fdDwStorageTemp, fdDwStorage, {
+        //vfpsDw, 為下載所得新增檔案清單, 檔案放置於fdDwStorageTemp內
+        vfpsDw = await downloadFiles(st, fdDwStorageTemp, {
             useExpandOnOldFiles,
             useSimulateFiles,
         })
@@ -289,7 +289,7 @@ let WDwdataFtp = async(st, opt = {}) => {
         //ltdtHashNewTemp, 計算新增檔案hash值
         let ltdtHashNewTemp = await pmSeries(vfpsDw, async(v) => {
             let id = v.name //用檔名做id
-            let hash = await fsGetFileXxHash(v.path) //檔案來源是位於fdDwStorageTemp
+            let hash = await fsGetFileXxHash(v.path)
             return {
                 id,
                 hash,

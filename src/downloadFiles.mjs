@@ -7,7 +7,7 @@ import WFtp from 'w-ftp/src/WFtp.mjs'
 import fsTreeFolder from 'wsemi/src/fsTreeFolder.mjs'
 
 
-let downloadFiles = async(st, fdDwStorageTemp, fdDwStorage, opt = {}) => {
+let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
     let errTemp = null
 
     //useExpandOnOldFiles
@@ -101,43 +101,6 @@ let downloadFiles = async(st, fdDwStorageTemp, fdDwStorage, opt = {}) => {
         errTemp = 'no files'
         throw new Error(errTemp)
     }
-
-    // //useExpandOnOldFiles
-    // if (useExpandOnOldFiles) {
-
-    //     //複製fdDwStorageTemp內所下載檔案至合併儲存資料夾fdDwStorage
-    //     each(vfps, (v) => {
-
-    //         //fsCopyFile
-    //         let fpSrc = v.path
-    //         let fpTar = `${fdDwStorage}/${v.name}`
-    //         let r = fsCopyFile(fpSrc, fpTar)
-
-    //         //check
-    //         if (r.error) {
-    //             console.log(r.error)
-    //             errTemp = r.error
-    //             return false //跳出
-    //         }
-
-    //     })
-
-    // }
-    // else {
-
-    //     //清空合併儲存資料夾fdDwStorage
-    //     fsCleanFolder(fdDwStorage)
-
-    //     //複製fdDwStorageTemp內所有下載檔案至合併儲存資料夾fdDwStorage
-    //     let r = fsCopyFolder(fdDwStorageTemp, fdDwStorage)
-
-    //     //check
-    //     if (r.error) {
-    //         console.log(r.error)
-    //         errTemp = r.error
-    //     }
-
-    // }
 
     //check
     if (errTemp !== null) {
