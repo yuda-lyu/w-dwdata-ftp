@@ -74,7 +74,6 @@ describe('multi', function() {
                     console.log(err)
                 })
             ev.on('change', (msg) => {
-
                 delete msg.type
                 delete msg.timeRunStart
                 delete msg.timeRunEnd
