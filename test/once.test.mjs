@@ -35,7 +35,7 @@ describe('once', function() {
         w.fsCleanFolder(fdDwCurrent)
 
         //fdResult
-        let fdResult = './_once_result'
+        let fdResult = `./_once_result`
         w.fsCleanFolder(fdResult)
 
         let opt = {
@@ -85,20 +85,21 @@ describe('once', function() {
         { event: 'proc-callfun-getCurrent', msg: 'start...' },
         { event: 'proc-callfun-getCurrent', num: 0, msg: 'done' },
         { event: 'compare', msg: 'start...' },
-        { event: 'compare', numRemove: 0, numAdd: 2, numModify: 0, numSame: 0, msg: 'done' },
         {
-            event: 'proc-add-callfun-add',
-            id: 'test1.txt',
-            msg: 'start...'
+            event: 'compare',
+            numRemove: 0,
+            numAdd: 2,
+            numModify: 0,
+            numSame: 0,
+            msg: 'done'
         },
+        { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'start...' },
         { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'done' },
-        {
-            event: 'proc-add-callfun-add',
-            id: 'test2.txt',
-            msg: 'start...'
-        },
+        { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'start...' },
         { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'done' },
         { event: 'proc-callfun-beforeEnd', msg: 'start...' },
+        { event: 'move-files-to-storage', msg: 'start...' },
+        { event: 'move-files-to-storage', msg: 'done' },
         { event: 'proc-callfun-beforeEnd', msg: 'done' },
         { event: 'end', msg: 'done' }
     ]

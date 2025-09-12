@@ -29,7 +29,7 @@ describe('multi', function() {
         w.fsCleanFolder(fdDwCurrent)
 
         //fdResult
-        let fdResult = './_multi_result'
+        let fdResult = `./_multi_result`
         w.fsCleanFolder(fdResult)
 
         let kpOper = {
@@ -84,6 +84,7 @@ describe('multi', function() {
                     'proc-callfun-getCurrent',
                     'proc-callfun-afterStart',
                     'proc-callfun-beforeEnd',
+                    'move-files-to-storage',
                 ])) {
                     return
                 }

@@ -24,7 +24,11 @@ import downloadFiles from './downloadFiles.mjs'
 
 
 /**
- * 下載FTP資料
+ * 基於檔案之下載FTP數據與任務建構器
+ *
+ * 執行階段最新hash數據放置於fdDwAttime，前次hash數據放置於fdDwCurrent，於結束前會將fdDwAttime複製蓋過fdDwCurrent
+ *
+ * 執行階段最新數據放置於fdDwStorageTemp，前次數據放置於fdDwStorage，於結束前會將fdDwStorageTemp複製蓋過fdDwStorage
  *
  * @param {String} st 輸入設定FTP連線資訊物件
  * @param {String} [st.transportation='FTP'] 輸入傳輸協定字串，可選'FTP'、'SFTP'，預設'FTP'
@@ -35,11 +39,11 @@ import downloadFiles from './downloadFiles.mjs'
  * @param {String} [st.fdIni='./'] 輸入同步資料夾字串，預設'./'
  * @param {Object} [opt={}] 輸入設定物件，預設{}
  * @param {Boolean} [opt.useExpandOnOldFiles=false] 輸入來源檔案是否僅為增量檔案布林值，預設false
- * @param {String} [opt.fdDwStorageTemp='./_dwStorageTemp'] 輸入單次下載檔案存放資料夾字串，預設'./_dwStorageTemp'
+ * @param {String} [opt.fdDwStorageTemp='./_dwStorageTemp'] 輸入最新下載檔案存放資料夾字串，預設'./_dwStorageTemp'
  * @param {String} [opt.fdDwStorage='./_dwStorage'] 輸入合併儲存檔案資料夾字串，預設'./_dwStorage'
  * @param {String} [opt.fdDwAttime='./_dwAttime'] 輸入當前下載供比對hash用之數據資料夾字串，預設'./_dwAttime'
  * @param {String} [opt.fdDwCurrent='./_dwCurrent'] 輸入已下載供比對hash用之數據資料夾字串，預設'./_dwCurrent'
- * @param {String} [opt.fdResult='./_result'] 輸入已下載數據所連動生成數據資料夾字串，預設'./_result'
+ * @param {String} [opt.fdResult=`./_result`] 輸入已下載數據所連動生成數據資料夾字串，預設`./_result`
  * @param {String} [opt.fdTaskCpActualSrc='./_taskCpActualSrc'] 輸入任務狀態之來源端完整資料夾字串，預設'./_taskCpActualSrc'
  * @param {String} [opt.fdTaskCpSrc='./_taskCpSrc'] 輸入任務狀態之來源端資料夾字串，預設'./_taskCpSrc'
  * @param {String} [opt.fdLog='./_logs'] 輸入儲存log資料夾字串，預設'./_logs'
@@ -83,7 +87,7 @@ import downloadFiles from './downloadFiles.mjs'
  * w.fsCleanFolder(fdDwCurrent)
  *
  * //fdResult
- * let fdResult = './_result'
+ * let fdResult = `./_result`
  * w.fsCleanFolder(fdResult)
  *
  * let opt = {
@@ -137,7 +141,7 @@ let WDwdataFtp = async(st, opt = {}) => {
         useSimulateFiles = false
     }
 
-    //fdDwStorageTemp, 單次下載檔案存放資料夾
+    //fdDwStorageTemp, 最新下載檔案存放資料夾
     let fdDwStorageTemp = get(opt, 'fdDwStorageTemp')
     if (!isestr(fdDwStorageTemp)) {
         fdDwStorageTemp = `./_dwStorageTemp`
@@ -176,7 +180,7 @@ let WDwdataFtp = async(st, opt = {}) => {
     //fdResult
     let fdResult = get(opt, 'fdResult')
     if (!isestr(fdResult)) {
-        fdResult = './_result'
+        fdResult = `./_result`
     }
     if (!fsIsFolder(fdResult)) {
         fsCreateFolder(fdResult)
@@ -426,7 +430,7 @@ let WDwdataFtp = async(st, opt = {}) => {
             //useExpandOnOldFiles
             if (useExpandOnOldFiles) {
 
-                //複製fdDwStorageTemp內所下載檔案至合併儲存資料夾fdDwStorage
+                //複製fdDwStorageTemp內新下載檔案至合併儲存資料夾fdDwStorage
                 each(vfpsDw, (v) => {
 
                     //fsCopyFile
@@ -447,13 +451,16 @@ let WDwdataFtp = async(st, opt = {}) => {
                 //清空合併儲存資料夾fdDwStorage
                 fsCleanFolder(fdDwStorage)
 
-                //複製fdDwStorageTemp內所有下載檔案至合併儲存資料夾fdDwStorage
+                //複製fdDwStorageTemp內新下載檔案至合併儲存資料夾fdDwStorage
                 let r = fsCopyFolder(fdDwStorageTemp, fdDwStorage)
 
                 //check
                 if (r.error) {
                     throw new Error(r.error)
                 }
+
+                //清空fdDwStorageTemp
+                fsCleanFolder(fdDwStorageTemp)
 
             }
 
@@ -470,7 +477,7 @@ let WDwdataFtp = async(st, opt = {}) => {
     let funAfterStart = async() => {
 
         if (isfun(funAfterStartCall)) {
-            let r = funAfterStartCall
+            let r = funAfterStartCall()
             if (ispm(r)) {
                 r = await r
             }
@@ -485,7 +492,7 @@ let WDwdataFtp = async(st, opt = {}) => {
         await funBeforeEndNec()
 
         if (isfun(funBeforeEndCall)) {
-            let r = funBeforeEndCall
+            let r = funBeforeEndCall()
             if (ispm(r)) {
                 r = await r
             }

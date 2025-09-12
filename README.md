@@ -1,5 +1,5 @@
 # w-dwdata-ftp
-A download tool for earthquake ML and PGA data from Taiwan CWA.
+A downloader for ftp data.
 
 ![language](https://img.shields.io/badge/language-JavaScript-orange.svg) 
 [![npm version](http://img.shields.io/npm/v/w-dwdata-ftp.svg?style=flat)](https://npmjs.org/package/w-dwdata-ftp) 
@@ -49,7 +49,7 @@ let fdDwCurrent = `./_dwCurrent`
 w.fsCleanFolder(fdDwCurrent)
 
 //fdResult
-let fdResult = './_result'
+let fdResult = `./_result`
 w.fsCleanFolder(fdResult)
 
 let opt = {

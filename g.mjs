@@ -31,7 +31,7 @@ let fdDwCurrent = `./_dwCurrent`
 w.fsCleanFolder(fdDwCurrent)
 
 //fdResult
-let fdResult = './_result'
+let fdResult = `./_result`
 w.fsCleanFolder(fdResult)
 
 let opt = {
