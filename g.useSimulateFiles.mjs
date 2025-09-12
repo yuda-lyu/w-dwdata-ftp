@@ -58,11 +58,11 @@ let run = async() => {
         fdDwAttime,
         fdDwCurrent,
         fdResult,
-    // funDownload,
-    // funGetCurrent,
-    // funRemove,
-    // funAdd,
-    // funModify,
+        // funDownload,
+        // funGetCurrent,
+        // funRemove,
+        // funAdd,
+        // funModify,
     }
     let ev = await WDwdataFtp(st, opt)
         .catch((err) => {

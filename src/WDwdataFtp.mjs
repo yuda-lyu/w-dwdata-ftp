@@ -353,7 +353,13 @@ let WDwdataFtp = async(st, opt = {}) => {
 
         let fd = `${fdResult}/${v.id}`
         if (fsIsFolder(fd)) {
-            fsDeleteFolder(fd)
+
+            let r = fsDeleteFolder(fd)
+
+            if (r.error) {
+                throw new Error(r.error)
+            }
+
         }
 
     }
@@ -370,9 +376,13 @@ let WDwdataFtp = async(st, opt = {}) => {
         }
         fsCleanFolder(fd)
 
-        let fpStorage = `${fdDwStorage}/${v.id}` //fdDwStorage內v.id為實際檔案, fpStorage為指向實際檔案路徑
+        let fpStorage = `${fdDwStorageTemp}/${v.id}` //fdDwStorageTemp為新下載檔案, 使用v.id為實際檔案名稱
         let fpResult = `${fd}/${v.id}`
-        fsCopyFile(fpStorage, fpResult)
+        let r = fsCopyFile(fpStorage, fpResult)
+
+        if (r.error) {
+            throw new Error(r.error)
+        }
 
     }
     if (!isfun(funAdd)) {
@@ -388,9 +398,13 @@ let WDwdataFtp = async(st, opt = {}) => {
         }
         fsCleanFolder(fd)
 
-        let fpStorage = `${fdDwStorage}/${v.id}` //fdDwStorage內v.id為實際檔案, fpStorage為指向實際檔案路徑
+        let fpStorage = `${fdDwStorageTemp}/${v.id}` //fdDwStorageTemp為新下載檔案, 使用v.id為實際檔案名稱
         let fpResult = `${fd}/${v.id}`
-        fsCopyFile(fpStorage, fpResult)
+        let r = fsCopyFile(fpStorage, fpResult)
+
+        if (r.error) {
+            throw new Error(r.error)
+        }
 
     }
     if (!isfun(funModify)) {
