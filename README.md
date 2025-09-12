@@ -32,6 +32,10 @@ let st = {
 }
 // console.log('st', st)
 
+//fdTagRemove
+let fdTagRemove = `./_tagRemove`
+w.fsCleanFolder(fdTagRemove)
+
 //fdDwStorageTemp
 let fdDwStorageTemp = `./_dwStorageTemp`
 w.fsCleanFolder(fdDwStorageTemp)
@@ -52,13 +56,25 @@ w.fsCleanFolder(fdDwCurrent)
 let fdResult = `./_result`
 w.fsCleanFolder(fdResult)
 
+//fdTaskCpActualSrc
+let fdTaskCpActualSrc = `./_taskCpActualSrc`
+w.fsCleanFolder(fdTaskCpActualSrc)
+
+//fdTaskCpSrc
+let fdTaskCpSrc = `./_taskCpSrc`
+w.fsCleanFolder(fdTaskCpSrc)
+
 let opt = {
     useExpandOnOldFiles: false, //true, false
+    fdTagRemove,
     fdDwStorageTemp,
     fdDwStorage,
     fdDwAttime,
     fdDwCurrent,
     fdResult,
+    fdTaskCpActualSrc,
+    fdTaskCpSrc,
+    // fdLog,
     // funDownload,
     // funGetCurrent,
     // funRemove,
@@ -77,9 +93,9 @@ ev.on('change', (msg) => {
 // change { event: 'proc-callfun-afterStart', msg: 'start...' }
 // change { event: 'proc-callfun-afterStart', msg: 'done' }
 // change { event: 'proc-callfun-download', msg: 'start...' }
-// change { event: 'proc-callfun-download', msg: 'done' }
+// change { event: 'proc-callfun-download', num: 2, msg: 'done' }
 // change { event: 'proc-callfun-getCurrent', msg: 'start...' }
-// change { event: 'proc-callfun-getCurrent', msg: 'done' }
+// change { event: 'proc-callfun-getCurrent', num: 0, msg: 'done' }
 // change { event: 'compare', msg: 'start...' }
 // change { event: 'compare', numRemove: 0, numAdd: 2, numModify: 0, numSame: 0, msg: 'done' }
 // change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'start...' }

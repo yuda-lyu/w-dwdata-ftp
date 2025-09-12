@@ -22,6 +22,10 @@ describe('once', function() {
         fs.writeFileSync(`${fdDwStorageTemp}/test1.txt`, 'test1-abc', 'utf8')
         fs.writeFileSync(`${fdDwStorageTemp}/test2.txt`, 'test2-def', 'utf8')
 
+        //fdTagRemove
+        let fdTagRemove = `./_once_tagRemove`
+        w.fsCleanFolder(fdTagRemove)
+
         //fdDwStorage
         let fdDwStorage = `./_once_dwStorage`
         w.fsCleanFolder(fdDwStorage)
@@ -38,14 +42,26 @@ describe('once', function() {
         let fdResult = `./_once_result`
         w.fsCleanFolder(fdResult)
 
+        //fdTaskCpActualSrc
+        let fdTaskCpActualSrc = `./_once_taskCpActualSrc`
+        w.fsCleanFolder(fdTaskCpActualSrc)
+
+        //fdTaskCpSrc
+        let fdTaskCpSrc = `./_once_taskCpSrc`
+        w.fsCleanFolder(fdTaskCpSrc)
+
         let opt = {
             useSimulateFiles: true,
             useExpandOnOldFiles: false, //true, false
+            fdTagRemove,
             fdDwStorageTemp,
             fdDwStorage,
             fdDwAttime,
             fdDwCurrent,
             fdResult,
+            fdTaskCpActualSrc,
+            fdTaskCpSrc,
+            // fdLog,
             // funDownload,
             // funGetCurrent,
             // funRemove,
@@ -65,11 +81,16 @@ describe('once', function() {
             ms.push(msg)
         })
         ev.on('end', () => {
+
+            w.fsDeleteFolder(fdTagRemove)
             w.fsDeleteFolder(fdDwStorageTemp)
             w.fsDeleteFolder(fdDwStorage)
             w.fsDeleteFolder(fdDwAttime)
             w.fsDeleteFolder(fdDwCurrent)
             w.fsDeleteFolder(fdResult)
+            w.fsDeleteFolder(fdTaskCpActualSrc)
+            w.fsDeleteFolder(fdTaskCpSrc)
+
             // console.log('ms', ms)
             pm.resolve(ms)
         })

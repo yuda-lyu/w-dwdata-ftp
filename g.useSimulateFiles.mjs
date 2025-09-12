@@ -7,6 +7,10 @@ import WDwdataFtp from './src/WDwdataFtp.mjs'
 
 let st = {} //開啟useSimulateFiles=true直接模擬ftp下載數據
 
+//fdTagRemove
+let fdTagRemove = `./_tagRemove`
+w.fsCleanFolder(fdTagRemove)
+
 //fdDwStorageTemp
 let fdDwStorageTemp = `./_dwStorageTemp`
 w.fsCleanFolder(fdDwStorageTemp)
@@ -26,6 +30,14 @@ w.fsCleanFolder(fdDwCurrent)
 //fdResult
 let fdResult = `./_result`
 w.fsCleanFolder(fdResult)
+
+//fdTaskCpActualSrc
+let fdTaskCpActualSrc = `./_taskCpActualSrc`
+w.fsCleanFolder(fdTaskCpActualSrc)
+
+//fdTaskCpSrc
+let fdTaskCpSrc = `./_taskCpSrc`
+w.fsCleanFolder(fdTaskCpSrc)
 
 let kpOper = {
     1: () => {
@@ -53,11 +65,15 @@ let run = async() => {
     let opt = {
         useSimulateFiles: true,
         useExpandOnOldFiles: false, //true, false
+        fdTagRemove,
         fdDwStorageTemp,
         fdDwStorage,
         fdDwAttime,
         fdDwCurrent,
         fdResult,
+        fdTaskCpActualSrc,
+        fdTaskCpSrc,
+        // fdLog,
         // funDownload,
         // funGetCurrent,
         // funRemove,

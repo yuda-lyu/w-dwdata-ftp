@@ -39,6 +39,7 @@ import downloadFiles from './downloadFiles.mjs'
  * @param {String} [st.fdIni='./'] 輸入同步資料夾字串，預設'./'
  * @param {Object} [opt={}] 輸入設定物件，預設{}
  * @param {Boolean} [opt.useExpandOnOldFiles=false] 輸入來源檔案是否僅為增量檔案布林值，預設false
+ * @param {String} [opt.fdTagRemove='./_tagRemove'] 輸入暫存標記為刪除數據資料夾字串，預設'./_tagRemove'
  * @param {String} [opt.fdDwStorageTemp='./_dwStorageTemp'] 輸入最新下載檔案存放資料夾字串，預設'./_dwStorageTemp'
  * @param {String} [opt.fdDwStorage='./_dwStorage'] 輸入合併儲存檔案資料夾字串，預設'./_dwStorage'
  * @param {String} [opt.fdDwAttime='./_dwAttime'] 輸入當前下載供比對hash用之數據資料夾字串，預設'./_dwAttime'
@@ -70,6 +71,10 @@ import downloadFiles from './downloadFiles.mjs'
  * }
  * // console.log('st', st)
  *
+ * //fdTagRemove
+ * let fdTagRemove = `./_tagRemove`
+ * w.fsCleanFolder(fdTagRemove)
+ *
  * //fdDwStorageTemp
  * let fdDwStorageTemp = `./_dwStorageTemp`
  * w.fsCleanFolder(fdDwStorageTemp)
@@ -90,13 +95,25 @@ import downloadFiles from './downloadFiles.mjs'
  * let fdResult = `./_result`
  * w.fsCleanFolder(fdResult)
  *
+ * //fdTaskCpActualSrc
+ * let fdTaskCpActualSrc = `./_taskCpActualSrc`
+ * w.fsCleanFolder(fdTaskCpActualSrc)
+ *
+ * //fdTaskCpSrc
+ * let fdTaskCpSrc = `./_taskCpSrc`
+ * w.fsCleanFolder(fdTaskCpSrc)
+ *
  * let opt = {
  *     useExpandOnOldFiles: false, //true, false
+ *     fdTagRemove,
  *     fdDwStorageTemp,
  *     fdDwStorage,
  *     fdDwAttime,
  *     fdDwCurrent,
  *     fdResult,
+ *     fdTaskCpActualSrc,
+ *     fdTaskCpSrc,
+ *     // fdLog,
  *     // funDownload,
  *     // funGetCurrent,
  *     // funRemove,
@@ -115,9 +132,9 @@ import downloadFiles from './downloadFiles.mjs'
  * // change { event: 'proc-callfun-afterStart', msg: 'start...' }
  * // change { event: 'proc-callfun-afterStart', msg: 'done' }
  * // change { event: 'proc-callfun-download', msg: 'start...' }
- * // change { event: 'proc-callfun-download', msg: 'done' }
+ * // change { event: 'proc-callfun-download', num: 2, msg: 'done' }
  * // change { event: 'proc-callfun-getCurrent', msg: 'start...' }
- * // change { event: 'proc-callfun-getCurrent', msg: 'done' }
+ * // change { event: 'proc-callfun-getCurrent', num: 0, msg: 'done' }
  * // change { event: 'compare', msg: 'start...' }
  * // change { event: 'compare', numRemove: 0, numAdd: 2, numModify: 0, numSame: 0, msg: 'done' }
  * // change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'start...' }
@@ -139,6 +156,12 @@ let WDwdataFtp = async(st, opt = {}) => {
     let useSimulateFiles = get(opt, 'useSimulateFiles')
     if (!isbol(useSimulateFiles)) {
         useSimulateFiles = false
+    }
+
+    //fdTagRemove
+    let fdTagRemove = get(opt, 'fdTagRemove')
+    if (!isestr(fdTagRemove)) {
+        fdTagRemove = `./_tagRemove`
     }
 
     //fdDwStorageTemp, 最新下載檔案存放資料夾
@@ -184,6 +207,15 @@ let WDwdataFtp = async(st, opt = {}) => {
     }
     if (!fsIsFolder(fdResult)) {
         fsCreateFolder(fdResult)
+    }
+
+    //fdTaskCpActualSrc
+    let fdTaskCpActualSrc = get(opt, 'fdTaskCpActualSrc')
+    if (!isestr(fdTaskCpActualSrc)) {
+        fdTaskCpActualSrc = `./_taskCpActualSrc`
+    }
+    if (!fsIsFolder(fdTaskCpActualSrc)) {
+        fsCreateFolder(fdTaskCpActualSrc)
     }
 
     //fdTaskCpSrc
@@ -501,9 +533,11 @@ let WDwdataFtp = async(st, opt = {}) => {
     }
 
     let optBdr = {
+        fdTagRemove,
         fdDwAttime,
         fdDwCurrent,
         fdResult,
+        fdTaskCpActualSrc,
         fdTaskCpSrc,
         fdLog,
         funDownload,

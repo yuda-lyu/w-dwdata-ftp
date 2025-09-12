@@ -12,6 +12,10 @@ describe('multi', function() {
 
         let st = {} //開啟useSimulateFiles=true直接模擬ftp下載數據
 
+        //fdTagRemove
+        let fdTagRemove = `./_multi_tagRemove`
+        w.fsCleanFolder(fdTagRemove)
+
         //fdDwStorageTemp
         let fdDwStorageTemp = `./_multi_dwStorageTemp`
         w.fsCleanFolder(fdDwStorageTemp)
@@ -31,6 +35,14 @@ describe('multi', function() {
         //fdResult
         let fdResult = `./_multi_result`
         w.fsCleanFolder(fdResult)
+
+        //fdTaskCpActualSrc
+        let fdTaskCpActualSrc = `./_multi_taskCpActualSrc`
+        w.fsCleanFolder(fdTaskCpActualSrc)
+
+        //fdTaskCpSrc
+        let fdTaskCpSrc = `./_multi_taskCpSrc`
+        w.fsCleanFolder(fdTaskCpSrc)
 
         let kpOper = {
             1: () => {
@@ -58,11 +70,15 @@ describe('multi', function() {
             let opt = {
                 useSimulateFiles: true,
                 useExpandOnOldFiles: false, //true, false
+                fdTagRemove,
                 fdDwStorageTemp,
                 fdDwStorage,
                 fdDwAttime,
                 fdDwCurrent,
                 fdResult,
+                fdTaskCpActualSrc,
+                fdTaskCpSrc,
+                // fdLog,
                 // funDownload,
                 // funGetCurrent,
                 // funRemove,
@@ -101,11 +117,14 @@ describe('multi', function() {
             await run()
         })
 
+        w.fsDeleteFolder(fdTagRemove)
         w.fsDeleteFolder(fdDwStorageTemp)
         w.fsDeleteFolder(fdDwStorage)
         w.fsDeleteFolder(fdDwAttime)
         w.fsDeleteFolder(fdDwCurrent)
         w.fsDeleteFolder(fdResult)
+        w.fsDeleteFolder(fdTaskCpActualSrc)
+        w.fsDeleteFolder(fdTaskCpSrc)
 
         // console.log('ms', ms)
         return ms
