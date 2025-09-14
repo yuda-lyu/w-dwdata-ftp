@@ -18,7 +18,7 @@ import fsCreateFolder from 'wsemi/src/fsCreateFolder.mjs'
 import fsCopyFolder from 'wsemi/src/fsCopyFolder.mjs'
 import fsDeleteFolder from 'wsemi/src/fsDeleteFolder.mjs'
 import fsTreeFolder from 'wsemi/src/fsTreeFolder.mjs'
-import fsGetFileXxHash from 'wsemi/src/fsGetFileXxHash.mjs'
+import fsGetFileBasicHash from 'wsemi/src/fsGetFileBasicHash.mjs'
 import WDwdataBuilder from 'w-dwdata-builder/src/WDwdataBuilder.mjs'
 import downloadFiles from './downloadFiles.mjs'
 
@@ -325,7 +325,7 @@ let WDwdataFtp = async(st, opt = {}) => {
         //ltdtHashNewTemp, 計算新增檔案hash值
         let ltdtHashNewTemp = await pmSeries(vfpsDw, async(v) => {
             let id = v.name //用檔名做id
-            let hash = await fsGetFileXxHash(v.path)
+            let hash = await fsGetFileBasicHash(v.path, { type: 'md5' })
             return {
                 id,
                 hash,
