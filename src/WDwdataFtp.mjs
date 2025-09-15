@@ -2,6 +2,7 @@ import fs from 'fs'
 import get from 'lodash-es/get.js'
 import each from 'lodash-es/each.js'
 import size from 'lodash-es/size.js'
+import filter from 'lodash-es/filter.js'
 import cloneDeep from 'lodash-es/cloneDeep.js'
 import isbol from 'wsemi/src/isbol.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
@@ -26,9 +27,9 @@ import downloadFiles from './downloadFiles.mjs'
 /**
  * 基於檔案之下載FTP數據與任務建構器
  *
- * 執行階段最新hash數據放置於fdDwAttime，前次hash數據放置於fdDwCurrent，於結束前會將fdDwAttime複製蓋過fdDwCurrent
+ * 執行階段最新hash數據放置於fdDwAttime，前次hash數據會於結束前自動備份至fdDwCurrent
  *
- * 執行階段最新數據放置於fdDwStorageTemp，前次數據放置於fdDwStorage，於結束前會將fdDwStorageTemp複製蓋過fdDwStorage
+ * 執行階段最新數據放置於fdDwStorageTemp，前次數據放置於fdDwStorage，於結束前會將fdDwStorage清空，將fdDwStorageTemp複製至fdDwStorage
  *
  * @param {String} st 輸入設定FTP連線資訊物件
  * @param {String} [st.transportation='FTP'] 輸入傳輸協定字串，可選'FTP'、'SFTP'，預設'FTP'
@@ -48,8 +49,8 @@ import downloadFiles from './downloadFiles.mjs'
  * @param {String} [opt.fdTaskCpActualSrc='./_taskCpActualSrc'] 輸入任務狀態之來源端完整資料夾字串，預設'./_taskCpActualSrc'
  * @param {String} [opt.fdTaskCpSrc='./_taskCpSrc'] 輸入任務狀態之來源端資料夾字串，預設'./_taskCpSrc'
  * @param {String} [opt.fdLog='./_logs'] 輸入儲存log資料夾字串，預設'./_logs'
- * @param {Function} [opt.funDownload=null] 輸入自定義當前下載之hash數據處理函數，回傳資料陣列，預設null
- * @param {Function} [opt.funGetCurrent=null] 輸入自定義已下載之hash數據處理函數，回傳資料陣列，預設null
+ * @param {Function} [opt.funDownload=null] 輸入取得最新下載檔案hash之函數，回傳資料陣列，預設null
+ * @param {Function} [opt.funGetCurrent=null] 輸入取得已下載檔案hash之函數，回傳資料陣列，預設null
  * @param {Function} [opt.funAdd=null] 輸入當有新資料時，需要連動處理之函數，預設null
  * @param {Function} [opt.funModify=null] 輸入當有資料需更新時，需要連動處理之函數，預設null
  * @param {Function} [opt.funRemove=null] 輸入當有資料需刪除時，需要連動處理之函數，預設null
@@ -264,23 +265,38 @@ let WDwdataFtp = async(st, opt = {}) => {
     }
     timeToleranceRemove = cdbl(timeToleranceRemove)
 
-    //treeFilesAndGetHashs
-    let treeFilesAndGetHashs = (fd) => {
+    //getFilesHash
+    let getFilesHash = async(vfps) => {
+
+        //ltdtHash
+        let ltdtHash = await pmSeries(vfps, async(v) => {
+            let id = v.name //用檔名做id
+            let hash = await fsGetFileBasicHash(v.path, { type: 'md5' })
+            return {
+                id,
+                hash,
+            }
+        })
+
+        return ltdtHash
+    }
+
+    //treeFolderAndGetFilesHash
+    let treeFolderAndGetFilesHash = async (fd) => {
 
         //vfps
         let vfps = fsTreeFolder(fd, 1)
         // console.log('vfps', vfps)
 
+        //filter
+        vfps = filter(vfps, { isFolder: false })
+
         //ltdtHash
-        let ltdtHash = []
-        each(vfps, (v) => {
-            let j = fs.readFileSync(v.path, 'utf8')
-            let o = JSON.parse(j)
-            ltdtHash.push(o)
-        })
+        let ltdtHash = await getFilesHash(vfps)
 
         return ltdtHash
     }
+
 
     //cvLtdtToKp
     let cvLtdtToKp = (ltdt) => {
@@ -323,21 +339,14 @@ let WDwdataFtp = async(st, opt = {}) => {
         // console.log('vfpsDw', vfpsDw[0], size(vfpsDw))
 
         //ltdtHashNewTemp, 計算新增檔案hash值
-        let ltdtHashNewTemp = await pmSeries(vfpsDw, async(v) => {
-            let id = v.name //用檔名做id
-            let hash = await fsGetFileBasicHash(v.path, { type: 'md5' })
-            return {
-                id,
-                hash,
-            }
-        })
+        let ltdtHashNewTemp = await getFilesHash(vfpsDw)
 
         //ltdtHashNew
         let ltdtHashNew = []
         if (useExpandOnOldFiles) {
 
-            //ltdtHashOld, 數據來源為fdDwCurrent, 為舊hash清單
-            let ltdtHashOld = treeFilesAndGetHashs(fdDwCurrent)
+            //ltdtHashOld, 數據來源為fdDwStorage, 為舊hash清單
+            let ltdtHashOld = treeFolderAndGetFilesHash(fdDwStorage)
 
             //最新合併後檔案hash值清單
             ltdtHashNew = mergeLtdt(ltdtHashNewTemp, ltdtHashOld)
@@ -374,9 +383,8 @@ let WDwdataFtp = async(st, opt = {}) => {
     //funGetCurrentDef
     let funGetCurrentDef = async() => {
 
-        //ltdtHashOld, 數據來源為fdDwCurrent, 為舊hash清單
-        let ltdtHashOld = treeFilesAndGetHashs(fdDwCurrent)
-        // console.log('ltdtHashOld', ltdtHashOld)
+        //ltdtHashOld, 數據來源為fdDwStorage, 為舊hash清單
+        let ltdtHashOld = treeFolderAndGetFilesHash(fdDwStorage)
 
         return ltdtHashOld
     }
@@ -480,7 +488,7 @@ let WDwdataFtp = async(st, opt = {}) => {
             }
             else {
 
-                //清空合併儲存資料夾fdDwStorage
+                //全量模式, 須預先清空合併儲存資料夾fdDwStorage
                 fsCleanFolder(fdDwStorage)
 
                 //複製fdDwStorageTemp內新下載檔案至合併儲存資料夾fdDwStorage
