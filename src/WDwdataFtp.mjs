@@ -1,5 +1,6 @@
 import fs from 'fs'
 import get from 'lodash-es/get.js'
+import size from 'lodash-es/size.js'
 import each from 'lodash-es/each.js'
 import filter from 'lodash-es/filter.js'
 import cloneDeep from 'lodash-es/cloneDeep.js'
@@ -339,10 +340,10 @@ let WDwdataFtp = async(st, opt = {}) => {
         })
         // console.log('vfpsDw', vfpsDw[0], size(vfpsDw))
 
-        // //check, 無檔案不報錯, 交由底層偵測與紀錄
-        // if (size(vfpsDw) === 0) {
-        //     throw new Error(`no files`)
-        // }
+        //check, 無檔案須報錯, 底層會中止與計算hash與計算檔案hash差異
+        if (size(vfpsDw) === 0) {
+            throw new Error(`no files`)
+        }
 
         //ltdtHashNewTemp, 計算新增檔案hash值
         let ltdtHashNewTemp = await getFilesHash(vfpsDw)
@@ -467,10 +468,10 @@ let WDwdataFtp = async(st, opt = {}) => {
         try {
             srlog.info({ event: 'move-files-to-storage', msg: 'start...' })
 
-            // //check, 無檔案不報錯, 交由底層偵測與紀錄
-            // if (size(vfpsDw) === 0) {
-            //     throw new Error(`no files`)
-            // }
+            //check, 無檔案須報錯, 底層會中止與計算hash與計算檔案hash差異
+            if (size(vfpsDw) === 0) {
+                throw new Error(`no files`)
+            }
 
             //useExpandOnOldFiles
             if (useExpandOnOldFiles) {
