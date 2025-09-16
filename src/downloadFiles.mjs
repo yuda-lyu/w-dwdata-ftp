@@ -1,5 +1,4 @@
 import get from 'lodash-es/get.js'
-import size from 'lodash-es/size.js'
 import filter from 'lodash-es/filter.js'
 import isbol from 'wsemi/src/isbol.mjs'
 import fsCleanFolder from 'wsemi/src/fsCleanFolder.mjs'
@@ -16,7 +15,7 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
         useExpandOnOldFiles = false
     }
 
-    //useSimulateFiles, 供測試用, 檔案得預先給予至fdDwStorageTemp
+    //useSimulateFiles, 檔案得預先給予至fdDwStorageTemp
     let useSimulateFiles = get(opt, 'useSimulateFiles')
     if (!isbol(useSimulateFiles)) {
         useSimulateFiles = false
@@ -90,17 +89,18 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
     }
 
     //vfps
-    let vfps = fsTreeFolder(fdDwStorageTemp, 1)
-    vfps = filter(vfps, (v) => {
-        return !v.isFolder //僅使用檔案
-    })
-    // console.log('vfps', vfps)
-
-    //check
-    if (size(vfps) === 0) {
-        errTemp = 'no files'
-        throw new Error(errTemp)
+    let vfps = []
+    try {
+        vfps = fsTreeFolder(fdDwStorageTemp, 1)
+        vfps = filter(vfps, (v) => {
+            return !v.isFolder //僅使用檔案
+        })
     }
+    catch (err) {
+        console.log(err)
+        errTemp = err
+    }
+    // console.log('vfps', vfps)
 
     //check
     if (errTemp !== null) {

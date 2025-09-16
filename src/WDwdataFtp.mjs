@@ -1,7 +1,6 @@
 import fs from 'fs'
 import get from 'lodash-es/get.js'
 import each from 'lodash-es/each.js'
-import size from 'lodash-es/size.js'
 import filter from 'lodash-es/filter.js'
 import cloneDeep from 'lodash-es/cloneDeep.js'
 import isbol from 'wsemi/src/isbol.mjs'
@@ -41,6 +40,7 @@ import downloadFiles from './downloadFiles.mjs'
  * @param {String} [st.fdIni='./'] 輸入同步資料夾字串，預設'./'
  * @param {Object} [opt={}] 輸入設定物件，預設{}
  * @param {Boolean} [opt.useExpandOnOldFiles=false] 輸入來源檔案是否僅為增量檔案布林值，預設false
+ * @param {Boolean} [opt.useSimulateFiles=false] 輸入是否使用模擬取得FTP數據布林值，預設false
  * @param {String} [opt.fdTagRemove='./_tagRemove'] 輸入暫存標記為刪除數據資料夾字串，預設'./_tagRemove'
  * @param {String} [opt.fdDwStorageTemp='./_dwStorageTemp'] 輸入最新下載檔案存放資料夾字串，預設'./_dwStorageTemp'
  * @param {String} [opt.fdDwStorage='./_dwStorage'] 輸入合併儲存檔案資料夾字串，預設'./_dwStorage'
@@ -154,7 +154,7 @@ let WDwdataFtp = async(st, opt = {}) => {
         useExpandOnOldFiles = false
     }
 
-    //useSimulateFiles, 供測試用, 檔案得預先給予至fdDwStorageTemp
+    //useSimulateFiles, 檔案得預先給予至fdDwStorageTemp
     let useSimulateFiles = get(opt, 'useSimulateFiles')
     if (!isbol(useSimulateFiles)) {
         useSimulateFiles = false
@@ -339,6 +339,11 @@ let WDwdataFtp = async(st, opt = {}) => {
         })
         // console.log('vfpsDw', vfpsDw[0], size(vfpsDw))
 
+        // //check, 無檔案不報錯, 交由底層偵測與紀錄
+        // if (size(vfpsDw) === 0) {
+        //     throw new Error(`no files`)
+        // }
+
         //ltdtHashNewTemp, 計算新增檔案hash值
         let ltdtHashNewTemp = await getFilesHash(vfpsDw)
 
@@ -462,10 +467,10 @@ let WDwdataFtp = async(st, opt = {}) => {
         try {
             srlog.info({ event: 'move-files-to-storage', msg: 'start...' })
 
-            //check, end代表成功或失敗結束, 故可能下載失敗size(vfpsDw)=0
-            if (size(vfpsDw) === 0) {
-                throw new Error(`no files`)
-            }
+            // //check, 無檔案不報錯, 交由底層偵測與紀錄
+            // if (size(vfpsDw) === 0) {
+            //     throw new Error(`no files`)
+            // }
 
             //useExpandOnOldFiles
             if (useExpandOnOldFiles) {
