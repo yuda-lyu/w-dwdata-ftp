@@ -105,9 +105,9 @@ describe('once', function() {
         { event: 'proc-callfun-download', num: 2, msg: 'done' },
         { event: 'proc-callfun-getCurrent', msg: 'start...' },
         { event: 'proc-callfun-getCurrent', num: 0, msg: 'done' },
-        { event: 'compare', msg: 'start...' },
+        { event: 'proc-compare', msg: 'start...' },
         {
-            event: 'compare',
+            event: 'proc-compare',
             numRemove: 0,
             numAdd: 2,
             numModify: 0,

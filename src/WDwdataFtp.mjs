@@ -10,13 +10,14 @@ import isp0int from 'wsemi/src/isp0int.mjs'
 import isfun from 'wsemi/src/isfun.mjs'
 import ispm from 'wsemi/src/ispm.mjs'
 import cdbl from 'wsemi/src/cdbl.mjs'
+import ltdtDiffByKey from 'wsemi/src/ltdtDiffByKey.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
 import fsIsFolder from 'wsemi/src/fsIsFolder.mjs'
 import fsCopyFile from 'wsemi/src/fsCopyFile.mjs'
+import fsDeleteFile from 'wsemi/src/fsDeleteFile.mjs'
 import fsCleanFolder from 'wsemi/src/fsCleanFolder.mjs'
 import fsCreateFolder from 'wsemi/src/fsCreateFolder.mjs'
-import fsCopyFolder from 'wsemi/src/fsCopyFolder.mjs'
 import fsDeleteFolder from 'wsemi/src/fsDeleteFolder.mjs'
 import fsTreeFolder from 'wsemi/src/fsTreeFolder.mjs'
 import fsGetFileBasicHash from 'wsemi/src/fsGetFileBasicHash.mjs'
@@ -136,8 +137,8 @@ import downloadFiles from './downloadFiles.mjs'
  * // change { event: 'proc-callfun-download', num: 2, msg: 'done' }
  * // change { event: 'proc-callfun-getCurrent', msg: 'start...' }
  * // change { event: 'proc-callfun-getCurrent', num: 0, msg: 'done' }
- * // change { event: 'compare', msg: 'start...' }
- * // change { event: 'compare', numRemove: 0, numAdd: 2, numModify: 0, numSame: 0, msg: 'done' }
+ * // change { event: 'proc-compare', msg: 'start...' }
+ * // change { event: 'proc-compare', numRemove: 0, numAdd: 2, numModify: 0, numSame: 0, msg: 'done' }
  * // change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'start...' }
  * // change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'done' }
  * // change { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'start...' }
@@ -346,7 +347,7 @@ let WDwdataFtp = async(st, opt = {}) => {
         if (useExpandOnOldFiles) {
 
             //ltdtHashOld, 數據來源為fdDwStorage, 為舊hash清單
-            let ltdtHashOld = treeFolderAndGetFilesHash(fdDwStorage)
+            let ltdtHashOld = await treeFolderAndGetFilesHash(fdDwStorage)
 
             //最新合併後檔案hash值清單
             ltdtHashNew = mergeLtdt(ltdtHashNewTemp, ltdtHashOld)
@@ -384,7 +385,7 @@ let WDwdataFtp = async(st, opt = {}) => {
     let funGetCurrentDef = async() => {
 
         //ltdtHashOld, 數據來源為fdDwStorage, 為舊hash清單
-        let ltdtHashOld = treeFolderAndGetFilesHash(fdDwStorage)
+        let ltdtHashOld = await treeFolderAndGetFilesHash(fdDwStorage)
 
         return ltdtHashOld
     }
@@ -459,7 +460,6 @@ let WDwdataFtp = async(st, opt = {}) => {
     let funBeforeEndNec = async() => {
 
         try {
-
             srlog.info({ event: 'move-files-to-storage', msg: 'start...' })
 
             //check, end代表成功或失敗結束, 故可能下載失敗size(vfpsDw)=0
@@ -469,6 +469,7 @@ let WDwdataFtp = async(st, opt = {}) => {
 
             //useExpandOnOldFiles
             if (useExpandOnOldFiles) {
+                //增量模式, 僅將新下載檔案儲存至fdDwStorage
 
                 //複製fdDwStorageTemp內新下載檔案至合併儲存資料夾fdDwStorage
                 each(vfpsDw, (v) => {
@@ -487,25 +488,82 @@ let WDwdataFtp = async(st, opt = {}) => {
 
             }
             else {
+                //全量模式, 將新下載檔案視為全部檔案, 並儲存至fdDwStorage
 
-                //全量模式, 須預先清空合併儲存資料夾fdDwStorage
-                fsCleanFolder(fdDwStorage)
+                // //先清空合併儲存資料夾fdDwStorage
+                // fsCleanFolder(fdDwStorage)
 
-                //複製fdDwStorageTemp內新下載檔案至合併儲存資料夾fdDwStorage
-                let r = fsCopyFolder(fdDwStorageTemp, fdDwStorage)
+                // //複製fdDwStorageTemp內新下載檔案至合併儲存資料夾fdDwStorage
+                // let r = fsCopyFolder(fdDwStorageTemp, fdDwStorage)
 
-                //check
-                if (r.error) {
-                    throw new Error(r.error)
-                }
+                // //check
+                // if (r.error) {
+                //     throw new Error(r.error)
+                // }
 
-                //清空fdDwStorageTemp
-                fsCleanFolder(fdDwStorageTemp)
+                //減少大量檔案操作, 檔案為新增與變更時皆採取覆蓋, 檔案為刪除時才進行刪除
+
+                //ltdtHashNew, 數據來源為fdDwStorageTemp, 為新hash清單
+                let ltdtHashNew = await treeFolderAndGetFilesHash(fdDwStorageTemp)
+
+                //ltdtHashOld, 數據來源為fdDwStorage, 為舊hash清單
+                let ltdtHashOld = await treeFolderAndGetFilesHash(fdDwStorage)
+
+                //ltdtDiffByKey
+                let r = ltdtDiffByKey(ltdtHashOld, ltdtHashNew, 'id', { withInfor: false })
+                // console.log('ltdtDiffByKey', r)
+                //   del: [ {...} ],
+                //   add: [ {...} ],
+                //   same: [ {...} ],
+                //   diff: [ {...} ],
+                // let numDel = size(r.del)
+                // let numAdd = size(r.add)
+                // let numDiff = size(r.diff)
+                // let numSame = size(r.same)
+
+                each([...r.add, ...r.diff], (v) => {
+
+                    //fn
+                    let fn = v.id
+
+                    //fpSrc, fpTar
+                    let fpSrc = `${fdDwStorageTemp}/${fn}`
+                    let fpTar = `${fdDwStorage}/${fn}`
+
+                    //fsCopyFile
+                    let rc = fsCopyFile(fpSrc, fpTar)
+
+                    //check
+                    if (rc.error) {
+                        throw new Error(rc.error)
+                    }
+
+                })
+
+                each(r.del, (v) => {
+
+                    //fn
+                    let fn = v.id
+
+                    //fpTar
+                    let fpTar = `${fdDwStorage}/${fn}`
+
+                    //fsDeleteFile
+                    let rd = fsDeleteFile(fpTar)
+
+                    //check
+                    if (rd.error) {
+                        throw new Error(rd.error)
+                    }
+
+                })
 
             }
 
-            srlog.info({ event: 'move-files-to-storage', msg: 'done' })
+            //清空fdDwStorageTemp
+            fsCleanFolder(fdDwStorageTemp)
 
+            srlog.info({ event: 'move-files-to-storage', msg: 'done' })
         }
         catch (err) {
             console.log(err)
