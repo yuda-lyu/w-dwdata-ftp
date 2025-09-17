@@ -2,7 +2,7 @@ import fs from 'fs'
 import get from 'lodash-es/get.js'
 import size from 'lodash-es/size.js'
 import each from 'lodash-es/each.js'
-import filter from 'lodash-es/filter.js'
+import map from 'lodash-es/map.js'
 import cloneDeep from 'lodash-es/cloneDeep.js'
 import isbol from 'wsemi/src/isbol.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
@@ -10,16 +10,15 @@ import isp0int from 'wsemi/src/isp0int.mjs'
 import isfun from 'wsemi/src/isfun.mjs'
 import ispm from 'wsemi/src/ispm.mjs'
 import cdbl from 'wsemi/src/cdbl.mjs'
-import ltdtDiffByKey from 'wsemi/src/ltdtDiffByKey.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
 import fsIsFolder from 'wsemi/src/fsIsFolder.mjs'
 import fsCopyFile from 'wsemi/src/fsCopyFile.mjs'
-import fsDeleteFile from 'wsemi/src/fsDeleteFile.mjs'
 import fsCleanFolder from 'wsemi/src/fsCleanFolder.mjs'
 import fsCreateFolder from 'wsemi/src/fsCreateFolder.mjs'
 import fsDeleteFolder from 'wsemi/src/fsDeleteFolder.mjs'
-import fsTreeFolder from 'wsemi/src/fsTreeFolder.mjs'
+import fsSyncFolder from 'wsemi/src/fsSyncFolder.mjs'
+import fsTreeFolderWithHash from 'wsemi/src/fsTreeFolderWithHash.mjs'
 import fsGetFileBasicHash from 'wsemi/src/fsGetFileBasicHash.mjs'
 import WDwdataBuilder from 'w-dwdata-builder/src/WDwdataBuilder.mjs'
 import downloadFiles from './downloadFiles.mjs'
@@ -287,18 +286,20 @@ let WDwdataFtp = async(st, opt = {}) => {
     let treeFolderAndGetFilesHash = async (fd) => {
 
         //vfps
-        let vfps = fsTreeFolder(fd, 1)
-        // console.log('vfps', vfps)
-
-        //filter
-        vfps = filter(vfps, { isFolder: false })
+        let vfps = await fsTreeFolderWithHash(fd, 1, { type: 'md5', forFile: true, forFolder: false })
 
         //ltdtHash
-        let ltdtHash = await getFilesHash(vfps)
+        let ltdtHash = map(vfps, (v) => {
+            let id = v.name //用檔名做id
+            let hash = v.hash
+            return {
+                id,
+                hash,
+            }
+        })
 
         return ltdtHash
     }
-
 
     //cvLtdtToKp
     let cvLtdtToKp = (ltdt) => {
@@ -494,75 +495,10 @@ let WDwdataFtp = async(st, opt = {}) => {
 
             }
             else {
-                //全量模式, 將新下載檔案視為全部檔案, 並儲存至fdDwStorage
+                //全量模式, 將新下載檔案視為全部檔案並儲存至fdDwStorage
 
-                // //先清空合併儲存資料夾fdDwStorage
-                // fsCleanFolder(fdDwStorage)
-
-                // //複製fdDwStorageTemp內新下載檔案至合併儲存資料夾fdDwStorage
-                // let r = fsCopyFolder(fdDwStorageTemp, fdDwStorage)
-
-                // //check
-                // if (r.error) {
-                //     throw new Error(r.error)
-                // }
-
-                //減少大量檔案操作, 檔案為新增與變更時皆採取覆蓋, 檔案為刪除時才進行刪除
-
-                //ltdtHashNew, 數據來源為fdDwStorageTemp, 為新hash清單
-                let ltdtHashNew = await treeFolderAndGetFilesHash(fdDwStorageTemp)
-
-                //ltdtHashOld, 數據來源為fdDwStorage, 為舊hash清單
-                let ltdtHashOld = await treeFolderAndGetFilesHash(fdDwStorage)
-
-                //ltdtDiffByKey
-                let r = ltdtDiffByKey(ltdtHashOld, ltdtHashNew, 'id', { withInfor: false })
-                // console.log('ltdtDiffByKey', r)
-                //   del: [ {...} ],
-                //   add: [ {...} ],
-                //   same: [ {...} ],
-                //   diff: [ {...} ],
-                // let numDel = size(r.del)
-                // let numAdd = size(r.add)
-                // let numDiff = size(r.diff)
-                // let numSame = size(r.same)
-
-                each([...r.add, ...r.diff], (v) => {
-
-                    //fn
-                    let fn = v.id
-
-                    //fpSrc, fpTar
-                    let fpSrc = `${fdDwStorageTemp}/${fn}`
-                    let fpTar = `${fdDwStorage}/${fn}`
-
-                    //fsCopyFile
-                    let rc = fsCopyFile(fpSrc, fpTar)
-
-                    //check
-                    if (rc.error) {
-                        throw new Error(rc.error)
-                    }
-
-                })
-
-                each(r.del, (v) => {
-
-                    //fn
-                    let fn = v.id
-
-                    //fpTar
-                    let fpTar = `${fdDwStorage}/${fn}`
-
-                    //fsDeleteFile
-                    let rd = fsDeleteFile(fpTar)
-
-                    //check
-                    if (rd.error) {
-                        throw new Error(rd.error)
-                    }
-
-                })
+                //fsSyncFolder, 將fdDwStorageTemp完全同步至fdDwStorage
+                await fsSyncFolder(fdDwStorageTemp, fdDwStorage)
 
             }
 
