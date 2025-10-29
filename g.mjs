@@ -6,6 +6,7 @@ import WDwdataFtp from './src/WDwdataFtp.mjs'
 
 
 let st = {
+    'transportation': 'FTP',
     'hostname': '{hostname}',
     'port': 21,
     'username': '{username}',

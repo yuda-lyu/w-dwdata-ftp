@@ -12,6 +12,7 @@ A downloader for ftp data.
 To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-dwdata-ftp/global.html).
 
 ## Installation
+
 ### Using npm(ES6 module):
 ```alias
 npm i w-dwdata-ftp
@@ -24,6 +25,7 @@ import w from 'wsemi'
 import WDwdataFtp from './src/WDwdataFtp.mjs'
 
 let st = {
+    'transportation': 'FTP',
     'hostname': '{hostname}',
     'port': 21,
     'username': '{username}',
