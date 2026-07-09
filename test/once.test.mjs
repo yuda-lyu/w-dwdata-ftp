@@ -1,8 +1,9 @@
 import fs from 'fs'
-import _ from 'lodash-es'
 import w from 'wsemi'
 import assert from 'assert'
 import WDwdataFtp from '../src/WDwdataFtp.mjs'
+import fakeSftpServer from './lib/fakeSftpServer.mjs'
+import deleteLogFolder from './lib/deleteLogFolder.mjs'
 
 
 describe('once', function() {
@@ -13,14 +14,30 @@ describe('once', function() {
 
         let ms = []
 
-        let st = {} //開啟useSimulateFiles=true直接模擬ftp下載數據
+        //fdSrv, 假SFTP伺服器根目錄, 內含第1層2個檔案與第2層1個檔案
+        let fdSrv = `./_once_srv`
+        w.fsCleanFolder(fdSrv)
+        fs.writeFileSync(`${fdSrv}/test1.txt`, 'test1-abc', 'utf8')
+        fs.writeFileSync(`${fdSrv}/test2.txt`, 'test2-def', 'utf8')
+        w.fsCreateFolder(`${fdSrv}/sub`)
+        fs.writeFileSync(`${fdSrv}/sub/test3.txt`, 'test3-ghi', 'utf8')
+
+        //srv, port給0由系統指派, 避免平行測試時衝突
+        let srv = await fakeSftpServer({ fdRoot: fdSrv })
+
+        //st, 連線至假SFTP伺服器
+        let st = {
+            transportation: 'SFTP',
+            hostname: '127.0.0.1',
+            port: srv.port,
+            username: 'u1',
+            password: 'p1',
+            fdIni: '.',
+        }
 
         //fdDwStorageTemp
-        let fdDwStorageTemp = `./_dwStorageTemp`
+        let fdDwStorageTemp = `./_once_dwStorageTemp`
         w.fsCleanFolder(fdDwStorageTemp)
-
-        fs.writeFileSync(`${fdDwStorageTemp}/test1.txt`, 'test1-abc', 'utf8')
-        fs.writeFileSync(`${fdDwStorageTemp}/test2.txt`, 'test2-def', 'utf8')
 
         //fdTagRemove
         let fdTagRemove = `./_once_tagRemove`
@@ -50,8 +67,11 @@ describe('once', function() {
         let fdTaskCpSrc = `./_once_taskCpSrc`
         w.fsCleanFolder(fdTaskCpSrc)
 
+        //fdLog
+        let fdLog = `./_once_logs`
+        w.fsCleanFolder(fdLog)
+
         let opt = {
-            useSimulateFiles: true,
             useExpandOnOldFiles: false, //true, false
             fdTagRemove,
             fdDwStorageTemp,
@@ -61,7 +81,7 @@ describe('once', function() {
             fdResult,
             fdTaskCpActualSrc,
             fdTaskCpSrc,
-            // fdLog,
+            fdLog,
             // funDownload,
             // funGetCurrent,
             // funRemove,
@@ -80,8 +100,17 @@ describe('once', function() {
             // console.log('change', msg)
             ms.push(msg)
         })
-        ev.on('end', () => {
+        ev.on('end', async() => {
 
+            //cts, 下載後所連動生成數據之實際內容
+            let cts = {}
+            w.fsTreeFolder(fdResult, 1).forEach((v) => {
+                cts[v.name] = fs.readFileSync(`${v.path}/${v.name}`, 'utf8')
+            })
+
+            await srv.close()
+
+            w.fsDeleteFolder(fdSrv)
             w.fsDeleteFolder(fdTagRemove)
             w.fsDeleteFolder(fdDwStorageTemp)
             w.fsDeleteFolder(fdDwStorage)
@@ -90,9 +119,10 @@ describe('once', function() {
             w.fsDeleteFolder(fdResult)
             w.fsDeleteFolder(fdTaskCpActualSrc)
             w.fsDeleteFolder(fdTaskCpSrc)
+            await deleteLogFolder(fdLog)
 
             // console.log('ms', ms)
-            pm.resolve(ms)
+            pm.resolve({ ms, cts })
         })
 
         return pm
@@ -119,15 +149,17 @@ describe('once', function() {
         { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'start...' },
         { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'done' },
         { event: 'proc-callfun-beforeEnd', msg: 'start...' },
-        { event: 'move-files-to-storage', msg: 'start...' },
-        { event: 'move-files-to-storage', msg: 'done' },
         { event: 'proc-callfun-beforeEnd', msg: 'done' },
         { event: 'end', msg: 'done' }
     ]
+    let cts = { //僅下載伺服器第1層檔案, sub/test3.txt不納入
+        'test1.txt': 'test1-abc',
+        'test2.txt': 'test2-def',
+    }
 
     it('test once', async () => {
         let r = await test()
-        let rr = ms
+        let rr = { ms, cts }
         assert.strict.deepEqual(r, rr)
     })
 

@@ -40,7 +40,6 @@ import downloadFiles from './downloadFiles.mjs'
  * @param {String} [st.fdIni='./'] 輸入同步資料夾字串，預設'./'
  * @param {Object} [opt={}] 輸入設定物件，預設{}
  * @param {Boolean} [opt.useExpandOnOldFiles=false] 輸入來源檔案是否僅為增量檔案布林值，預設false
- * @param {Boolean} [opt.useSimulateFiles=false] 輸入是否使用模擬取得FTP數據布林值，預設false
  * @param {String} [opt.fdTagRemove='./_tagRemove'] 輸入暫存標記為刪除數據資料夾字串，預設'./_tagRemove'
  * @param {String} [opt.fdDwStorageTemp='./_dwStorageTemp'] 輸入最新下載檔案存放資料夾字串，預設'./_dwStorageTemp'
  * @param {String} [opt.fdDwStorage='./_dwStorage'] 輸入合併儲存檔案資料夾字串，預設'./_dwStorage'
@@ -58,6 +57,7 @@ import downloadFiles from './downloadFiles.mjs'
  * @param {Function} [opt.funAfterStart=null] 輸入偵測程序剛開始啟動時，需要處理之函數，預設null
  * @param {Function} [opt.funBeforeEnd=null] 輸入偵測程序要結束前，需要處理之函數，預設null
  * @param {Number} [opt.timeToleranceRemove=0] 輸入刪除任務之防抖時長，單位ms，預設0，代表不使用
+ * @param {Object} [opt.srLog=null] 輸入事件紀錄物件，需提供函數info與error，各接收一紀錄物件，供下載FTP檔案時紀錄各階段事件，未提供時不進行紀錄，預設null
  * @returns {Object} 回傳事件物件，可呼叫函數on監聽change事件
  * @example
  *
@@ -155,12 +155,6 @@ let WDwdataFtp = async(st, opt = {}) => {
         useExpandOnOldFiles = false
     }
 
-    //useSimulateFiles, 檔案得預先給予至fdDwStorageTemp
-    let useSimulateFiles = get(opt, 'useSimulateFiles')
-    if (!isbol(useSimulateFiles)) {
-        useSimulateFiles = false
-    }
-
     //fdTagRemove
     let fdTagRemove = get(opt, 'fdTagRemove')
     if (!isestr(fdTagRemove)) {
@@ -230,7 +224,7 @@ let WDwdataFtp = async(st, opt = {}) => {
         fsCreateFolder(fdTaskCpSrc)
     }
 
-    //fdLog
+    //fdLog, 於w-dwdata-builder內w-data-scheduler會使用與建置fdLog
     let fdLog = get(opt, 'fdLog')
     if (!isestr(fdLog)) {
         fdLog = './_logs'
@@ -266,6 +260,31 @@ let WDwdataFtp = async(st, opt = {}) => {
         timeToleranceRemove = 0
     }
     timeToleranceRemove = cdbl(timeToleranceRemove)
+
+    //srLog
+    let srLog = get(opt, 'srLog', null)
+
+    //srLogInfo
+    let srLogInfo = get(srLog, 'info', null)
+    if (isfun(srLogInfo)) {
+        srLogInfo = (...args) => {
+            return srLog.info(...args)
+        }
+    }
+    else {
+        srLogInfo = () => {}
+    }
+
+    //srLogError
+    let srLogError = get(srLog, 'error', null)
+    if (isfun(srLogError)) {
+        srLogError = (...args) => {
+            return srLog.error(...args)
+        }
+    }
+    else {
+        srLogError = () => {}
+    }
 
     //getFilesHash
     let getFilesHash = async(vfps) => {
@@ -337,8 +356,7 @@ let WDwdataFtp = async(st, opt = {}) => {
 
         //vfpsDw, 為下載所得新增檔案清單, 檔案放置於fdDwStorageTemp內
         vfpsDw = await downloadFiles(st, fdDwStorageTemp, {
-            useExpandOnOldFiles,
-            useSimulateFiles,
+            srLog,
         })
         // console.log('vfpsDw', vfpsDw[0], size(vfpsDw))
 
@@ -468,7 +486,7 @@ let WDwdataFtp = async(st, opt = {}) => {
     let funBeforeEndNec = async() => {
 
         try {
-            srlog.info({ event: 'move-files-to-storage', msg: 'start...' })
+            srLogInfo({ event: 'move-files-to-storage', msg: 'start...' })
 
             //check, 無檔案須報錯, 底層會中止與計算hash與計算檔案hash差異
             if (size(vfpsDw) === 0) {
@@ -506,11 +524,11 @@ let WDwdataFtp = async(st, opt = {}) => {
             //清空fdDwStorageTemp
             fsCleanFolder(fdDwStorageTemp)
 
-            srlog.info({ event: 'move-files-to-storage', msg: 'done' })
+            srLogInfo({ event: 'move-files-to-storage', msg: 'done' })
         }
         catch (err) {
             console.log(err)
-            srlog.error({ event: 'move-files-to-storage', msg: getErrorMessage(err) })
+            srLogError({ event: 'move-files-to-storage', msg: getErrorMessage(err) })
         }
 
     }
@@ -559,9 +577,6 @@ let WDwdataFtp = async(st, opt = {}) => {
         timeToleranceRemove,
     }
     let ev = await WDwdataBuilder(optBdr)
-
-    //srlog
-    let srlog = ev.srlog
 
     return ev
 }

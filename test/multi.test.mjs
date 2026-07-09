@@ -1,8 +1,9 @@
 import fs from 'fs'
-import _ from 'lodash-es'
 import w from 'wsemi'
 import assert from 'assert'
 import WDwdataFtp from '../src/WDwdataFtp.mjs'
+import fakeSftpServer from './lib/fakeSftpServer.mjs'
+import deleteLogFolder from './lib/deleteLogFolder.mjs'
 
 
 describe('multi', function() {
@@ -10,7 +11,22 @@ describe('multi', function() {
     let test = async() => {
         let ms = []
 
-        let st = {} //開啟useSimulateFiles=true直接模擬ftp下載數據
+        //fdSrv, 假SFTP伺服器根目錄
+        let fdSrv = `./_multi_srv`
+        w.fsCleanFolder(fdSrv)
+
+        //srv, port給0由系統指派, 避免平行測試時衝突
+        let srv = await fakeSftpServer({ fdRoot: fdSrv })
+
+        //st, 連線至假SFTP伺服器
+        let st = {
+            transportation: 'SFTP',
+            hostname: '127.0.0.1',
+            port: srv.port,
+            username: 'u1',
+            password: 'p1',
+            fdIni: '.',
+        }
 
         //fdTagRemove
         let fdTagRemove = `./_multi_tagRemove`
@@ -44,17 +60,21 @@ describe('multi', function() {
         let fdTaskCpSrc = `./_multi_taskCpSrc`
         w.fsCleanFolder(fdTaskCpSrc)
 
+        //fdLog
+        let fdLog = `./_multi_logs`
+        w.fsCleanFolder(fdLog)
+
         let kpOper = {
             1: () => {
-                fs.writeFileSync(`${fdDwStorageTemp}/test1.txt`, 'test1-abc', 'utf8')
+                fs.writeFileSync(`${fdSrv}/test1.txt`, 'test1-abc', 'utf8')
             },
             2: () => { //add test2.txt
-                fs.writeFileSync(`${fdDwStorageTemp}/test1.txt`, 'test1-abc', 'utf8')
-                fs.writeFileSync(`${fdDwStorageTemp}/test2.txt`, 'test2-def', 'utf8')
+                fs.writeFileSync(`${fdSrv}/test1.txt`, 'test1-abc', 'utf8')
+                fs.writeFileSync(`${fdSrv}/test2.txt`, 'test2-def', 'utf8')
             },
             3: () => { //modify test2.txt
-                fs.writeFileSync(`${fdDwStorageTemp}/test1.txt`, 'test1-abc', 'utf8')
-                fs.writeFileSync(`${fdDwStorageTemp}/test2.txt`, 'test2-def-modify', 'utf8')
+                fs.writeFileSync(`${fdSrv}/test1.txt`, 'test1-abc', 'utf8')
+                fs.writeFileSync(`${fdSrv}/test2.txt`, 'test2-def-modify', 'utf8')
             },
         }
 
@@ -64,11 +84,10 @@ describe('multi', function() {
 
             let pm = w.genPm()
 
-            //依照i模擬ftp下載數據
+            //依照i更新假SFTP伺服器內待下載檔案
             kpOper[i]()
 
             let opt = {
-                useSimulateFiles: true,
                 useExpandOnOldFiles: false, //true, false
                 fdTagRemove,
                 fdDwStorageTemp,
@@ -78,7 +97,7 @@ describe('multi', function() {
                 fdResult,
                 fdTaskCpActualSrc,
                 fdTaskCpSrc,
-                // fdLog,
+                fdLog,
                 // funDownload,
                 // funGetCurrent,
                 // funRemove,
@@ -117,6 +136,9 @@ describe('multi', function() {
             await run()
         })
 
+        await srv.close()
+
+        w.fsDeleteFolder(fdSrv)
         w.fsDeleteFolder(fdTagRemove)
         w.fsDeleteFolder(fdDwStorageTemp)
         w.fsDeleteFolder(fdDwStorage)
@@ -125,6 +147,7 @@ describe('multi', function() {
         w.fsDeleteFolder(fdResult)
         w.fsDeleteFolder(fdTaskCpActualSrc)
         w.fsDeleteFolder(fdTaskCpSrc)
+        await deleteLogFolder(fdLog)
 
         // console.log('ms', ms)
         return ms
