@@ -1,6 +1,7 @@
 import get from 'lodash-es/get.js'
 import filter from 'lodash-es/filter.js'
 import isfun from 'wsemi/src/isfun.mjs'
+import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
 import fsCleanFolder from 'wsemi/src/fsCleanFolder.mjs'
 import fsTreeFolder from 'wsemi/src/fsTreeFolder.mjs'
 import WFtp from 'w-ftp/src/WFtp.mjs'
@@ -51,10 +52,10 @@ import WFtp from 'w-ftp/src/WFtp.mjs'
  *         console.log(err)
  *     })
  * // console.log('vfps', vfps)
- * // info { event: 'ftp.conn:start' }
- * // info { event: 'ftp.conn:end' }
- * // info { event: 'ftp.ls', length: 2 }
- * // info { event: 'ftp.syncToLocal:start' }
+ * // info { event: 'ftp.conn', msg: 'start...' }
+ * // info { event: 'ftp.conn', msg: 'done' }
+ * // info { event: 'ftp.ls', length: 2, msg: 'done' }
+ * // info { event: 'ftp.syncToLocal', msg: 'start...' }
  * // ...
  *
  */
@@ -100,9 +101,9 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
         // console.log('ftp', ftp)
 
         //conn
-        srLogInfo({ event: 'ftp.conn:start' })
+        srLogInfo({ event: 'ftp.conn', msg: 'start...' })
         await ftp.conn()
-        srLogInfo({ event: 'ftp.conn:end' })
+        srLogInfo({ event: 'ftp.conn', msg: 'done' })
 
         //syncFiles
         let syncFiles = async () => {
@@ -111,16 +112,16 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
             // let fps = await ftp.ls('.')
             let fps = await ftp.ls(st.fdIni)
             // console.log('ftp.ls', fps[0], fps.length)
-            srLogInfo({ event: 'ftp.ls', length: fps.length })
+            srLogInfo({ event: 'ftp.ls', length: fps.length, msg: 'done' })
 
             //syncToLocal
-            srLogInfo({ event: 'ftp.syncToLocal:start' })
+            srLogInfo({ event: 'ftp.syncToLocal', msg: 'start...' })
             let r = await ftp.syncToLocal(
                 st.fdIni,
                 fdDwStorageTemp,
                 (p) => {
                     // console.log('ftp.syncToLocal p', p.name, p.progress)
-                    srLogInfo({ event: 'ftp.syncToLocal:each', name: p.name, progress: p.progress })
+                    srLogInfo({ event: 'ftp.syncToLocal', name: p.name, progress: p.progress, msg: 'running...' })
                 },
                 {
                     levelLimit: 1, //僅下載第1層內檔案
@@ -128,36 +129,36 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
                 },
             )
             // console.log('ftp.syncToLocal r', r)
-            srLogInfo({ event: 'ftp.syncToLocal:end', result: r })
+            srLogInfo({ event: 'ftp.syncToLocal', result: r, msg: 'done' })
 
         }
 
-        srLogInfo({ event: 'syncFiles:start' })
+        srLogInfo({ event: 'syncFiles', msg: 'start...' })
         await syncFiles()
             .then(() => {
-                srLogInfo({ event: 'syncFiles:end' })
+                srLogInfo({ event: 'syncFiles', msg: 'done' })
             })
             .catch((err) => { //須catch, 避免操作指令失敗造成程序中止
                 // console.log(err)
-                srLogError({ event: 'syncFiles:error', error: err })
+                srLogError({ event: 'syncFiles', msg: getErrorMessage(err) })
             })
 
         //quit
         let r = await ftp.quit()
         // console.log('ftp.quit', r)
-        srLogInfo({ event: 'ftp.quit', result: r })
+        srLogInfo({ event: 'ftp.quit', result: r, msg: 'done' })
 
     }
 
     //core
-    srLogInfo({ event: 'core:start' })
+    srLogInfo({ event: 'core', msg: 'start...' })
     await core()
         .then(() => {
-            srLogInfo({ event: 'core:end' })
+            srLogInfo({ event: 'core', msg: 'done' })
         })
         .catch((err) => { //須再catch, 避免無法連線SFTP時中止程序
             // console.log(err)
-            srLogError({ event: 'core:error', error: err })
+            srLogError({ event: 'core', msg: getErrorMessage(err) })
             errTemp = err
         })
 
@@ -169,16 +170,16 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
     //vfps
     let vfps = []
     try {
-        srLogInfo({ event: 'listFiles:start' })
+        srLogInfo({ event: 'getVfps', msg: 'start...' })
         vfps = fsTreeFolder(fdDwStorageTemp, 1)
         vfps = filter(vfps, (v) => {
             return !v.isFolder //僅使用檔案
         })
-        srLogInfo({ event: 'listFiles:end', length: vfps.length })
+        srLogInfo({ event: 'getVfps', length: vfps.length, msg: 'done' })
     }
     catch (err) {
         // console.log(err)
-        srLogError({ event: 'listFiles:error', error: err })
+        srLogError({ event: 'getVfps', msg: getErrorMessage(err) })
         errTemp = err
     }
     // console.log('vfps', vfps)
