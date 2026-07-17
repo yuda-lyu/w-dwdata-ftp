@@ -3,24 +3,29 @@ import w from 'wsemi'
 import assert from 'assert'
 import WDwdataFtp from '../src/WDwdataFtp.mjs'
 import fakeSftpServer from './lib/fakeSftpServer.mjs'
+import fakeFtpServer from './lib/fakeFtpServer.mjs'
 import deleteLogFolder from './lib/deleteLogFolder.mjs'
 
 
 describe('multi', function() {
 
-    let test = async() => {
+    //test, transportation可選'SFTP'或'FTP', fakeServer給予對應之假伺服器
+    let test = async(transportation, fakeServer) => {
         let ms = []
 
-        //fdSrv, 假SFTP伺服器根目錄
-        let fdSrv = `./_multi_srv`
+        //tag, 各協定使用獨立資料夾避免互相干擾
+        let tag = `_multi_${transportation.toLowerCase()}`
+
+        //fdSrv, 假伺服器根目錄
+        let fdSrv = `./${tag}_srv`
         w.fsCleanFolder(fdSrv)
 
         //srv, port給0由系統指派, 避免平行測試時衝突
-        let srv = await fakeSftpServer({ fdRoot: fdSrv })
+        let srv = await fakeServer({ fdRoot: fdSrv })
 
-        //st, 連線至假SFTP伺服器
+        //st, 連線至假伺服器
         let st = {
-            transportation: 'SFTP',
+            transportation,
             hostname: '127.0.0.1',
             port: srv.port,
             username: 'u1',
@@ -29,39 +34,39 @@ describe('multi', function() {
         }
 
         //fdTagRemove
-        let fdTagRemove = `./_multi_tagRemove`
+        let fdTagRemove = `./${tag}_tagRemove`
         w.fsCleanFolder(fdTagRemove)
 
         //fdDwStorageTemp
-        let fdDwStorageTemp = `./_multi_dwStorageTemp`
+        let fdDwStorageTemp = `./${tag}_dwStorageTemp`
         w.fsCleanFolder(fdDwStorageTemp)
 
         //fdDwStorage
-        let fdDwStorage = `./_multi_dwStorage`
+        let fdDwStorage = `./${tag}_dwStorage`
         w.fsCleanFolder(fdDwStorage)
 
         //fdDwAttime
-        let fdDwAttime = `./_multi_dwAttime`
+        let fdDwAttime = `./${tag}_dwAttime`
         w.fsCleanFolder(fdDwAttime)
 
         //fdDwCurrent
-        let fdDwCurrent = `./_multi_dwCurrent`
+        let fdDwCurrent = `./${tag}_dwCurrent`
         w.fsCleanFolder(fdDwCurrent)
 
         //fdResult
-        let fdResult = `./_multi_result`
+        let fdResult = `./${tag}_result`
         w.fsCleanFolder(fdResult)
 
         //fdTaskCpActualSrc
-        let fdTaskCpActualSrc = `./_multi_taskCpActualSrc`
+        let fdTaskCpActualSrc = `./${tag}_taskCpActualSrc`
         w.fsCleanFolder(fdTaskCpActualSrc)
 
         //fdTaskCpSrc
-        let fdTaskCpSrc = `./_multi_taskCpSrc`
+        let fdTaskCpSrc = `./${tag}_taskCpSrc`
         w.fsCleanFolder(fdTaskCpSrc)
 
         //fdLog
-        let fdLog = `./_multi_logs`
+        let fdLog = `./${tag}_logs`
         w.fsCleanFolder(fdLog)
 
         let kpOper = {
@@ -84,7 +89,7 @@ describe('multi', function() {
 
             let pm = w.genPm()
 
-            //依照i更新假SFTP伺服器內待下載檔案
+            //依照i更新假伺服器內待下載檔案
             kpOper[i]()
 
             let opt = {
@@ -195,8 +200,14 @@ describe('multi', function() {
         { event: 'end', msg: 'done' }
     ]
 
-    it('test multi', async () => {
-        let r = await test()
+    it('test multi (SFTP)', async () => {
+        let r = await test('SFTP', fakeSftpServer)
+        let rr = ms
+        assert.strict.deepEqual(r, rr)
+    })
+
+    it('test multi (FTP)', async () => {
+        let r = await test('FTP', fakeFtpServer)
         let rr = ms
         assert.strict.deepEqual(r, rr)
     })

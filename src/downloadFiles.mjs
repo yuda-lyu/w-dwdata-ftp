@@ -100,11 +100,6 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
         })
         // console.log('ftp', ftp)
 
-        //conn
-        srLogInfo({ event: 'ftp.conn', msg: 'start...' })
-        await ftp.conn()
-        srLogInfo({ event: 'ftp.conn', msg: 'done' })
-
         //syncFiles
         let syncFiles = async () => {
 
@@ -133,20 +128,40 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
 
         }
 
-        srLogInfo({ event: 'syncFiles', msg: 'start...' })
-        await syncFiles()
-            .then(() => {
-                srLogInfo({ event: 'syncFiles', msg: 'done' })
-            })
-            .catch((err) => { //須catch, 避免操作指令失敗造成程序中止
-                // console.log(err)
-                srLogError({ event: 'syncFiles', msg: getErrorMessage(err) })
-            })
+        try {
 
-        //quit
-        let r = await ftp.quit()
-        // console.log('ftp.quit', r)
-        srLogInfo({ event: 'ftp.quit', result: r, msg: 'done' })
+            //conn
+            srLogInfo({ event: 'ftp.conn', msg: 'start...' })
+            await ftp.conn()
+            srLogInfo({ event: 'ftp.conn', msg: 'done' })
+
+            //syncFiles
+            srLogInfo({ event: 'syncFiles', msg: 'start...' })
+            await syncFiles()
+                .then(() => {
+                    srLogInfo({ event: 'syncFiles', msg: 'done' })
+                })
+                .catch((err) => { //須catch, 避免操作指令失敗造成程序中止
+                    // console.log(err)
+                    srLogError({ event: 'syncFiles', msg: getErrorMessage(err) })
+                })
+
+        }
+        finally {
+            //quit, 凡conn過即須執行至quit, w-ftp(1.0.17+)之quit會硬關閉socket, 否則FTP停滯時socket殘留致行程無法退出
+
+            //quit, 須catch, quit為收尾清理, 逾時路徑socket已被硬關閉, 失敗不應作廢已下載檔案
+            await ftp.quit()
+                .then((r) => {
+                    // console.log('ftp.quit', r)
+                    srLogInfo({ event: 'ftp.quit', result: r, msg: 'done' })
+                })
+                .catch((err) => {
+                    // console.log(err)
+                    srLogError({ event: 'ftp.quit', msg: getErrorMessage(err) })
+                })
+
+        }
 
     }
 

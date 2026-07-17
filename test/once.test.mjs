@@ -3,19 +3,24 @@ import w from 'wsemi'
 import assert from 'assert'
 import WDwdataFtp from '../src/WDwdataFtp.mjs'
 import fakeSftpServer from './lib/fakeSftpServer.mjs'
+import fakeFtpServer from './lib/fakeFtpServer.mjs'
 import deleteLogFolder from './lib/deleteLogFolder.mjs'
 
 
 describe('once', function() {
 
-    let test = async() => {
+    //test, transportation可選'SFTP'或'FTP', fakeServer給予對應之假伺服器
+    let test = async(transportation, fakeServer) => {
 
         let pm = w.genPm()
 
         let ms = []
 
-        //fdSrv, 假SFTP伺服器根目錄, 內含第1層2個檔案與第2層1個檔案
-        let fdSrv = `./_once_srv`
+        //tag, 各協定使用獨立資料夾避免互相干擾
+        let tag = `_once_${transportation.toLowerCase()}`
+
+        //fdSrv, 假伺服器根目錄, 內含第1層2個檔案與第2層1個檔案
+        let fdSrv = `./${tag}_srv`
         w.fsCleanFolder(fdSrv)
         fs.writeFileSync(`${fdSrv}/test1.txt`, 'test1-abc', 'utf8')
         fs.writeFileSync(`${fdSrv}/test2.txt`, 'test2-def', 'utf8')
@@ -23,11 +28,11 @@ describe('once', function() {
         fs.writeFileSync(`${fdSrv}/sub/test3.txt`, 'test3-ghi', 'utf8')
 
         //srv, port給0由系統指派, 避免平行測試時衝突
-        let srv = await fakeSftpServer({ fdRoot: fdSrv })
+        let srv = await fakeServer({ fdRoot: fdSrv })
 
-        //st, 連線至假SFTP伺服器
+        //st, 連線至假伺服器
         let st = {
-            transportation: 'SFTP',
+            transportation,
             hostname: '127.0.0.1',
             port: srv.port,
             username: 'u1',
@@ -36,39 +41,39 @@ describe('once', function() {
         }
 
         //fdDwStorageTemp
-        let fdDwStorageTemp = `./_once_dwStorageTemp`
+        let fdDwStorageTemp = `./${tag}_dwStorageTemp`
         w.fsCleanFolder(fdDwStorageTemp)
 
         //fdTagRemove
-        let fdTagRemove = `./_once_tagRemove`
+        let fdTagRemove = `./${tag}_tagRemove`
         w.fsCleanFolder(fdTagRemove)
 
         //fdDwStorage
-        let fdDwStorage = `./_once_dwStorage`
+        let fdDwStorage = `./${tag}_dwStorage`
         w.fsCleanFolder(fdDwStorage)
 
         //fdDwAttime
-        let fdDwAttime = `./_once_dwAttime`
+        let fdDwAttime = `./${tag}_dwAttime`
         w.fsCleanFolder(fdDwAttime)
 
         //fdDwCurrent
-        let fdDwCurrent = `./_once_dwCurrent`
+        let fdDwCurrent = `./${tag}_dwCurrent`
         w.fsCleanFolder(fdDwCurrent)
 
         //fdResult
-        let fdResult = `./_once_result`
+        let fdResult = `./${tag}_result`
         w.fsCleanFolder(fdResult)
 
         //fdTaskCpActualSrc
-        let fdTaskCpActualSrc = `./_once_taskCpActualSrc`
+        let fdTaskCpActualSrc = `./${tag}_taskCpActualSrc`
         w.fsCleanFolder(fdTaskCpActualSrc)
 
         //fdTaskCpSrc
-        let fdTaskCpSrc = `./_once_taskCpSrc`
+        let fdTaskCpSrc = `./${tag}_taskCpSrc`
         w.fsCleanFolder(fdTaskCpSrc)
 
         //fdLog
-        let fdLog = `./_once_logs`
+        let fdLog = `./${tag}_logs`
         w.fsCleanFolder(fdLog)
 
         let opt = {
@@ -157,8 +162,14 @@ describe('once', function() {
         'test2.txt': 'test2-def',
     }
 
-    it('test once', async () => {
-        let r = await test()
+    it('test once (SFTP)', async () => {
+        let r = await test('SFTP', fakeSftpServer)
+        let rr = { ms, cts }
+        assert.strict.deepEqual(r, rr)
+    })
+
+    it('test once (FTP)', async () => {
+        let r = await test('FTP', fakeFtpServer)
         let rr = { ms, cts }
         assert.strict.deepEqual(r, rr)
     })
