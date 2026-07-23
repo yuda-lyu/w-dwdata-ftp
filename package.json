@@ -1,17 +1,17 @@
 {
   "name": "w-dwdata-ftp",
-  "version": "1.0.37",
+  "version": "1.0.38",
   "main": "dist/w-dwdata-ftp.umd.js",
   "dependencies": {
     "axios": "^1.18.1",
     "lodash-es": "^4.18.1",
-    "w-dwdata-builder": "^1.0.35",
-    "w-ftp": "^1.0.18",
-    "wsemi": "^1.8.66"
+    "w-dwdata-builder": "^1.0.36",
+    "w-ftp": "^1.0.19",
+    "wsemi": "^1.8.67"
   },
   "devDependencies": {
     "ssh2": "^1.17.0",
-    "w-package-tools": "^1.1.11"
+    "w-package-tools": "^1.1.12"
   },
   "scripts": {
     "test": "mocha --parallel --timeout 60000",
