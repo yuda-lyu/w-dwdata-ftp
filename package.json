@@ -1,13 +1,12 @@
 {
   "name": "w-dwdata-ftp",
-  "version": "1.0.38",
+  "version": "1.0.39",
   "main": "dist/w-dwdata-ftp.umd.js",
   "dependencies": {
     "axios": "^1.18.1",
-    "lodash-es": "^4.18.1",
-    "w-dwdata-builder": "^1.0.36",
-    "w-ftp": "^1.0.19",
-    "wsemi": "^1.8.67"
+    "w-dwdata-builder": "^1.0.37",
+    "w-ftp": "^1.0.20",
+    "wsemi": "^1.8.68"
   },
   "devDependencies": {
     "ssh2": "^1.17.0",
