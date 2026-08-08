@@ -148,7 +148,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WDwdataFtp.mjs.html">WDwdataFtp.mjs</a>, <a href="WDwdataFtp.mjs.html#line150">line 150</a>
+        <a href="WDwdataFtp.mjs.html">WDwdataFtp.mjs</a>, <a href="WDwdataFtp.mjs.html#line149">line 149</a>
     </li></ul></dd>
     
 
@@ -195,7 +195,7 @@
 
     <h5 class="h5-examples">Example</h5>
     
-    <pre class="prettyprint"><code>import w from 'wsemi'import WDwdataFtp from './src/WDwdataFtp.mjs'let st = {    'transportation': 'FTP',    'hostname': '{hostname}',    'port': 21,    'username': '{username}',    'password': '{password}',    'fdIni': './'}// console.log('st', st)//fdTagRemovelet fdTagRemove = `./_tagRemove`w.fsCleanFolder(fdTagRemove)//fdDwStorageTemplet fdDwStorageTemp = `./_dwStorageTemp`w.fsCleanFolder(fdDwStorageTemp)//fdDwStoragelet fdDwStorage = `./_dwStorage`w.fsCleanFolder(fdDwStorage)//fdDwAttimelet fdDwAttime = `./_dwAttime`w.fsCleanFolder(fdDwAttime)//fdDwCurrentlet fdDwCurrent = `./_dwCurrent`w.fsCleanFolder(fdDwCurrent)//fdResultlet fdResult = `./_result`w.fsCleanFolder(fdResult)//fdTaskCpActualSrclet fdTaskCpActualSrc = `./_taskCpActualSrc`w.fsCleanFolder(fdTaskCpActualSrc)//fdTaskCpSrclet fdTaskCpSrc = `./_taskCpSrc`w.fsCleanFolder(fdTaskCpSrc)let opt = {    useExpandOnOldFiles: false, //true, false    fdTagRemove,    fdDwStorageTemp,    fdDwStorage,    fdDwAttime,    fdDwCurrent,    fdResult,    fdTaskCpActualSrc,    fdTaskCpSrc,    // fdLog,    // funDownload,    // funGetCurrent,    // funRemove,    // funAdd,    // funModify,}let ev = await WDwdataFtp(st, opt)    .catch((err) => {        console.log(err)    })ev.on('change', (msg) => {    delete msg.type    console.log('change', msg)})// change { event: 'start', msg: 'running...' }// change { event: 'proc-callfun-afterStart', msg: 'start...' }// change { event: 'proc-callfun-afterStart', msg: 'done' }// change { event: 'proc-callfun-download', msg: 'start...' }// change { event: 'proc-callfun-download', num: 2, msg: 'done' }// change { event: 'proc-callfun-getCurrent', msg: 'start...' }// change { event: 'proc-callfun-getCurrent', num: 0, msg: 'done' }// change { event: 'proc-compare', msg: 'start...' }// change { event: 'proc-compare', numRemove: 0, numAdd: 2, numModify: 0, numSame: 0, msg: 'done' }// change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'start...' }// change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'done' }// change { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'start...' }// change { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'done' }// ...</code></pre>
+    <pre class="prettyprint"><code>import w from 'wsemi'import WDwdataFtp from './src/WDwdataFtp.mjs'let st = {    'transportation': 'FTP',    'hostname': '{hostname}',    'port': 21,    'username': '{username}',    'password': '{password}',    'fdIni': './'}// console.log('st', st)//fdTagRemovelet fdTagRemove = `./_tagRemove`w.fsCleanFolder(fdTagRemove)//fdDwStorageTemplet fdDwStorageTemp = `./_dwStorageTemp`w.fsCleanFolder(fdDwStorageTemp)//fdDwStoragelet fdDwStorage = `./_dwStorage`w.fsCleanFolder(fdDwStorage)//fdDwAttimelet fdDwAttime = `./_dwAttime`w.fsCleanFolder(fdDwAttime)//fdDwCurrentlet fdDwCurrent = `./_dwCurrent`w.fsCleanFolder(fdDwCurrent)//fdResultlet fdResult = `./_result`w.fsCleanFolder(fdResult)//fdTaskCpActualSrclet fdTaskCpActualSrc = `./_taskCpActualSrc`w.fsCleanFolder(fdTaskCpActualSrc)//fdTaskCpSrclet fdTaskCpSrc = `./_taskCpSrc`w.fsCleanFolder(fdTaskCpSrc)let opt = {    useExpandOnOldFiles: false, //true, false    fdTagRemove,    fdDwStorageTemp,    fdDwStorage,    fdDwAttime,    fdDwCurrent,    fdResult,    fdTaskCpActualSrc,    fdTaskCpSrc,    // funDownload,    // funGetCurrent,    // funRemove,    // funAdd,    // funModify,}let ev = await WDwdataFtp(st, opt)    .catch((err) => {        console.log(err)    })ev.on('change', (msg) => {    delete msg.type    console.log('change', msg)})// change { event: 'start', msg: 'running...' }// change { event: 'proc-callfun-afterStart', msg: 'start...' }// change { event: 'proc-callfun-afterStart', msg: 'done' }// change { event: 'proc-callfun-download', msg: 'start...' }// change { event: 'proc-callfun-download', num: 2, msg: 'done' }// change { event: 'proc-callfun-getCurrent', msg: 'start...' }// change { event: 'proc-callfun-getCurrent', num: 0, msg: 'done' }// change { event: 'proc-compare', msg: 'start...' }// change { event: 'proc-compare', numRemove: 0, numAdd: 2, numModify: 0, numSame: 0, msg: 'done' }// change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'start...' }// change { event: 'proc-add-callfun-add', id: 'test1.txt', msg: 'done' }// change { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'start...' }// change { event: 'proc-add-callfun-add', id: 'test2.txt', msg: 'done' }// ...</code></pre>
 
 
 
@@ -958,46 +958,6 @@
 
         <tr>
             
-                <td class="name"><code>fdLog</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">String</span>
-
-
-
-            
-            </td>
-
-            
-                <td class="attributes">
-                
-                    &lt;optional><br>
-                
-
-                
-
-                
-                </td>
-            
-
-            
-                <td class="default">
-                
-                    <code>'./_logs'</code>
-                
-                </td>
-            
-
-            <td class="description last"><p>輸入儲存log資料夾字串，預設'./_logs'</p></td>
-        </tr>
-
-    
-
-        <tr>
-            
                 <td class="name"><code>funDownload</code></td>
             
 
@@ -1351,7 +1311,47 @@
                 </td>
             
 
-            <td class="description last"><p>輸入事件紀錄物件，需提供函數info與error，各接收一紀錄物件，供下載FTP檔案時紀錄各階段事件，未提供時不進行紀錄，預設null</p></td>
+            <td class="description last"><p>輸入事件紀錄物件，需提供函數info、warn與error，各接收一紀錄物件，供下載FTP檔案與偵測數據變更時紀錄各階段事件，未提供時不進行紀錄，其中warn目前保留未使用，預設null</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>useShowLog</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Boolean</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>true</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入是否於偵測數據變更過程將錯誤與取消訊息輸出至console布林值，下載FTP檔案階段本身不輸出至console，惟其錯誤往上拋出後仍受此設定影響，預設true</p></td>
         </tr>
 
     
@@ -2022,7 +2022,7 @@
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Sat Aug 08 2026 15:35:51 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Sat Aug 08 2026 20:55:19 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
