@@ -4,7 +4,6 @@ import assert from 'assert'
 import WDwdataFtp from '../src/WDwdataFtp.mjs'
 import fakeSftpServer from './lib/fakeSftpServer.mjs'
 import fakeFtpServer from './lib/fakeFtpServer.mjs'
-import deleteLogFolder from './lib/deleteLogFolder.mjs'
 
 
 describe('once', function() {
@@ -72,10 +71,6 @@ describe('once', function() {
         let fdTaskCpSrc = `./${tag}_taskCpSrc`
         w.fsCleanFolder(fdTaskCpSrc)
 
-        //fdLog
-        let fdLog = `./${tag}_logs`
-        w.fsCleanFolder(fdLog)
-
         let opt = {
             useExpandOnOldFiles: false, //true, false
             fdTagRemove,
@@ -86,7 +81,6 @@ describe('once', function() {
             fdResult,
             fdTaskCpActualSrc,
             fdTaskCpSrc,
-            fdLog,
             // funDownload,
             // funGetCurrent,
             // funRemove,
@@ -124,7 +118,6 @@ describe('once', function() {
             w.fsDeleteFolder(fdResult)
             w.fsDeleteFolder(fdTaskCpActualSrc)
             w.fsDeleteFolder(fdTaskCpSrc)
-            await deleteLogFolder(fdLog)
 
             // console.log('ms', ms)
             pm.resolve({ ms, cts })

@@ -4,7 +4,6 @@ import assert from 'assert'
 import WDwdataFtp from '../src/WDwdataFtp.mjs'
 import fakeSftpServer from './lib/fakeSftpServer.mjs'
 import fakeFtpServer from './lib/fakeFtpServer.mjs'
-import deleteLogFolder from './lib/deleteLogFolder.mjs'
 
 
 describe('multi', function() {
@@ -65,10 +64,6 @@ describe('multi', function() {
         let fdTaskCpSrc = `./${tag}_taskCpSrc`
         w.fsCleanFolder(fdTaskCpSrc)
 
-        //fdLog
-        let fdLog = `./${tag}_logs`
-        w.fsCleanFolder(fdLog)
-
         let kpOper = {
             1: () => {
                 fs.writeFileSync(`${fdSrv}/test1.txt`, 'test1-abc', 'utf8')
@@ -102,7 +97,6 @@ describe('multi', function() {
                 fdResult,
                 fdTaskCpActualSrc,
                 fdTaskCpSrc,
-                fdLog,
                 // funDownload,
                 // funGetCurrent,
                 // funRemove,
@@ -152,7 +146,6 @@ describe('multi', function() {
         w.fsDeleteFolder(fdResult)
         w.fsDeleteFolder(fdTaskCpActualSrc)
         w.fsDeleteFolder(fdTaskCpSrc)
-        await deleteLogFolder(fdLog)
 
         // console.log('ms', ms)
         return ms

@@ -36,7 +36,20 @@ let fakeSftpServer = async(opt = {}) => {
     let port = opt.port || 0
 
     //hostKeys, 執行期即時生成
-    let kp = utils.generateKeyPairSync('ed25519')
+    //ssh2(1.17.0)之generateKeyPairSync有1/256機率產生無法解析之金鑰, 故生成後須以parseKey回驗, 失敗則重生, 否則Server會拋出'Cannot parse privateKey: Malformed OpenSSH private key'
+    //根因於ssh2/lib/keygen.js之parseDERs的ed25519分支: SPKI之BIT STRING內容為[unused-bits位元組0x00]+[32位元組公鑰], 應只跳過1個位元組,
+    //但其以「移除所有開頭0x00」之迴圈處理, 當公鑰本身首位元組恰為0x00時(機率1/256)會被多剝一個位元組, 產出31位元組公鑰而不合法
+    let kp = null
+    for (let i = 0; i < 20; i++) {
+        let kpTemp = utils.generateKeyPairSync('ed25519')
+        if (!(utils.parseKey(kpTemp.private) instanceof Error)) {
+            kp = kpTemp
+            break
+        }
+    }
+    if (kp === null) {
+        throw new Error(`can not generate valid host key`)
+    }
 
     //toReal, 將客戶端路徑轉為根目錄內實體路徑, 並限制不可逃逸至根目錄外
     let toReal = (p) => {

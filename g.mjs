@@ -57,7 +57,6 @@ let opt = {
     fdResult,
     fdTaskCpActualSrc,
     fdTaskCpSrc,
-    // fdLog,
     // funDownload,
     // funGetCurrent,
     // funRemove,
