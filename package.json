@@ -1,18 +1,18 @@
 {
   "name": "w-dwdata-ftp",
-  "version": "1.0.51",
+  "version": "1.0.52",
   "main": "dist/w-dwdata-ftp.umd.js",
   "dependencies": {
-    "w-dwdata-builder": "^1.0.51",
-    "w-ftp": "^1.0.32",
-    "wsemi": "^1.8.85"
+    "w-dwdata-builder": "^1.0.52",
+    "w-ftp": "^1.0.33",
+    "wsemi": "^1.8.92"
   },
   "devDependencies": {
     "ssh2": "^1.17.0",
-    "w-package-tools": "^1.1.15"
+    "w-package-tools": "^1.1.16"
   },
   "scripts": {
-    "test": "mocha --parallel --timeout 60000",
+    "test": "mocha --parallel \"test/*.test.mjs\" --timeout 180000",
     "deploy": "gh-pages -d docs"
   },
   "repository": {
