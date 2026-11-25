@@ -1,11 +1,11 @@
 {
   "name": "w-dwdata-ftp",
-  "version": "1.1.37",
+  "version": "1.1.38",
   "main": "dist/w-dwdata-ftp.umd.js",
   "dependencies": {
-    "w-dwdata-builder": "^1.1.37",
-    "w-ftp": "^1.0.71",
-    "wsemi": "^1.9.74"
+    "w-dwdata-builder": "^1.1.38",
+    "w-ftp": "^1.0.72",
+    "wsemi": "^1.9.76"
   },
   "devDependencies": {
     "ssh2": "^1.17.0",
