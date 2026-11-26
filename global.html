@@ -29,7 +29,7 @@
 <nav >
     
     
-    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#WDwdataFtp">WDwdataFtp</a></li><li><a href="global.html#downloadFiles">downloadFiles</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#WDwdataFtp">WDwdataFtp</a></li><li><a href="global.html#downloadFiles">downloadFiles</a></li><li><a href="global.html#optReader">optReader</a></li></ul>
     
 </nav>
 
@@ -142,13 +142,15 @@
     <dt class="tag-description">Description:</dt>
     <dd class="tag-description"><ul class="dummy"><li><p>基於檔案之下載FTP數據與任務建構器</p>
 <p>執行階段最新hash數據放置於fdDwAttime，前次hash數據會於結束前自動備份至fdDwCurrent</p>
-<p>執行階段最新數據放置於fdDwStorageTemp，前次數據放置於fdDwStorage，於結束前會將fdDwStorage清空，將fdDwStorageTemp複製至fdDwStorage</p></li></ul></dd>
+<p>執行階段最新數據放置於fdDwStorageTemp，前次數據放置於fdDwStorage，於結束前會將fdDwStorageTemp內已處理之檔案搬入fdDwStorage(全量模式為鏡像同步，增量模式為複製)，再清空fdDwStorageTemp</p>
+<p>下載階段：逐檔下載，某檔失敗時重新連線後重試(opt.retry)，重試用盡之檔不視為整輪失敗，僅不納入本輪新下載檔案(全量模式沿用fdDwStorage內前次檔案，視為未變更，不會被當成已刪除)；連線、ls失敗或全部檔案皆失敗則取消該輪，詳見downloadFiles</p>
+<p>主階段(funAdd、funModify、funRemove)處理失敗、被略過或主階段被取消時，未處理成功之新增/變更檔不會搬入fdDwStorage，刪除失敗或未處理之檔不會自fdDwStorage移除，下輪比對仍有差異而再處理，故為至少一次語意，funAdd、funModify、funRemove須可重複執行</p></li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="WDwdataFtp.mjs.html">WDwdataFtp.mjs</a>, <a href="WDwdataFtp.mjs.html#line149">line 149</a>
+        <a href="WDwdataFtp.mjs.html">WDwdataFtp.mjs</a>, <a href="WDwdataFtp.mjs.html#line168">line 168</a>
     </li></ul></dd>
     
 
@@ -525,6 +527,44 @@
         </tr>
 
     
+
+        <tr>
+            
+                <td class="name"><code>fdDownloadTemp</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入w-ftp下載暫存區資料夾字串，經st原樣轉交downloadFiles，不得為opt.fdDwStorageTemp或其內，詳見downloadFiles</p></td>
+        </tr>
+
+    
     </tbody>
 </table>
 
@@ -568,7 +608,7 @@
                 </td>
             
 
-            <td class="description last"><p>輸入設定物件，預設{}</p>
+            <td class="description last"><p>輸入設定物件，預設{}；非預期之輸入視為未給改用預設</p>
                 <h6>Properties</h6>
                 
 
@@ -1238,6 +1278,286 @@
 
         <tr>
             
+                <td class="name"><code>retry</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>2</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入各檔下載失敗後最多重試次數之非負整數，每次重試前會先重新連線，0代表不重試，預設2，詳見downloadFiles</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>retryInterval</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>2000</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入重試前等待毫秒數之非負整數，預設2000，詳見downloadFiles</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>timeFile</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>100000</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入各檔單次下載之時限毫秒數之正整數，SFTP自w-ftp 1.0.75起亦受此時限約束，大檔須自行給較大值，預設100000，詳見downloadFiles</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>timeRound</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>0</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入整輪逐檔下載之時限毫秒數之非負整數，0代表不限制，預設0，詳見downloadFiles</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>onTrace</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>null</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入觀察回調函數，轉交downloadFiles，供測試與診斷以事件同步，事件種類見downloadFiles，預設null</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>debug</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Boolean</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>false</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入是否於opt出現非預期輸入時輸出警告布林值，須恰為true才生效，警告為固定詞彙(不含輸入值)，同一鍵同一行程只警告一次，並轉交downloadFiles，預設false</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>funLog</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>null</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入警告之出口函數，格式為(msg, { fn, reason, key })=&gt;{}，僅opt.debug為true時使用，未給則以console.warn輸出，預設null</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
                 <td class="name"><code>timeToleranceRemove</code></td>
             
 
@@ -1421,14 +1741,21 @@
 <dl class="details">
     
     <dt class="tag-description">Description:</dt>
-    <dd class="tag-description"><ul class="dummy"><li><p>由FTP或SFTP下載檔案至本機暫存資料夾fdDwStorageTemp，並回傳所下載之檔案清單</p>
-<p>下載前會先清空fdDwStorageTemp，僅下載st.fdIni內第1層之檔案，且強制複寫本機數據</p></li></ul></dd>
+    <dd class="tag-description"><ul class="dummy"><li><p>由FTP或SFTP下載檔案至本機暫存資料夾fdDwStorageTemp，並回傳所下載之檔案清單與下載失敗之檔案清單</p>
+<p>下載前會先清空fdDwStorageTemp，僅下載st.fdIni內第1層之檔案，且強制複寫本機數據</p>
+<p>逐檔下載，各檔由w-ftp(1.0.75以上)先寫入下載暫存區，傳輸完成且本機大小等於遠端大小後才移至fdDwStorageTemp，故fdDwStorageTemp內不會有傳輸中途之殘檔；
+某檔下載失敗(含下載中途連線中斷、逾時)時，先quit斷開連線，再重新連線(以ls驗證連線可用)後重試該檔，最多重試opt.retry次，每次重試前等待opt.retryInterval；
+重試用盡仍失敗之檔不視為整輪失敗，僅不納入files且不留殘檔(fdDwStorageTemp內只會有完整下載之檔案)，其餘檔案照常下載，失敗之檔列於failed與srLog.error</p>
+<p>下列情形視為整輪失敗，reject並清空fdDwStorageTemp，不回傳空清單當成功：連線建立失敗、列舉檔案(ls)失敗、重新連線失敗(最多嘗試1+retry次)、有檔案須下載而全部皆失敗(reject之錯誤物件另帶failed)、失敗後殘檔無法刪除</p>
+<p>因失敗之檔不在files內，使用端若以鏡像方式同步(files內沒有即視為已刪除)，須自行處理failed內之檔案(例如沿用前次檔案)，否則失敗之檔會被視為已刪除</p>
+<p>注意：本版回傳型態由陣列改為物件{ files, failed }；各檔單次下載時限opt.timeFile預設100000ms(SFTP自w-ftp 1.0.75起亦受此時限約束，大檔須自行給較大值)；
+FTP伺服器不支援SIZE指令時w-ftp無法核對完整性而拒絕下載，各檔皆會失敗</p></li></ul></dd>
     
 
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="downloadFiles.mjs.html">downloadFiles.mjs</a>, <a href="downloadFiles.mjs.html#line62">line 62</a>
+        <a href="downloadFiles.mjs.html">downloadFiles.mjs</a>, <a href="downloadFiles.mjs.html#line94">line 94</a>
     </li></ul></dd>
     
 
@@ -1475,7 +1802,7 @@
 
     <h5 class="h5-examples">Example</h5>
     
-    <pre class="prettyprint"><code>import downloadFiles from './src/downloadFiles.mjs'let st = {    'transportation': 'FTP',    'hostname': '{hostname}',    'port': 21,    'username': '{username}',    'password': '{password}',    'fdIni': './'}let opt = {    srLog: {        info: (msg) => {            console.log('info', msg)        },        error: (msg) => {            console.log('error', msg)        },    },}let vfps = await downloadFiles(st, `./_dwStorageTemp`, opt)    .catch((err) => {        console.log(err)    })// console.log('vfps', vfps)// info { event: 'ftp.conn', msg: 'start...' }// info { event: 'ftp.conn', msg: 'done' }// info { event: 'ftp.ls', length: 2, msg: 'done' }// info { event: 'ftp.syncToLocal', msg: 'start...' }// ...</code></pre>
+    <pre class="prettyprint"><code>import downloadFiles from './src/downloadFiles.mjs'let st = {    'transportation': 'FTP',    'hostname': '{hostname}',    'port': 21,    'username': '{username}',    'password': '{password}',    'fdIni': './'}let opt = {    srLog: {        info: (msg) => {            console.log('info', msg)        },        error: (msg) => {            console.log('error', msg)        },    },}let { files, failed } = await downloadFiles(st, `./_dwStorageTemp`, opt)    .catch((err) => {        console.log(err)    })// console.log('files', files)// console.log('failed', failed)// info { event: 'ftp.conn', msg: 'start...' }// info { event: 'ftp.conn', msg: 'done' }// info { event: 'ftp.ls', length: 2, msg: 'done' }// info { event: 'ftp.syncToLocal', msg: 'start...' }// ...</code></pre>
 
 
 
@@ -1805,6 +2132,44 @@
         </tr>
 
     
+
+        <tr>
+            
+                <td class="name"><code>fdDownloadTemp</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入w-ftp下載暫存區資料夾字串(w-ftp先寫入暫存檔，傳完才移至目標)，經st原樣轉交WFtp，未給時用w-ftp之預設'./_wftpDownloadTemp'；不得為fdDwStorageTemp或其內(暫存檔會被當成下載成果)，否則reject且不下載</p></td>
+        </tr>
+
+    
     </tbody>
 </table>
 
@@ -1884,7 +2249,7 @@
                 </td>
             
 
-            <td class="description last"><p>輸入設定物件，預設{}</p>
+            <td class="description last"><p>輸入設定物件，預設{}；非預期之輸入視為未給改用預設</p>
                 <h6>Properties</h6>
                 
 
@@ -1951,6 +2316,286 @@
         </tr>
 
     
+
+        <tr>
+            
+                <td class="name"><code>retry</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>2</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入各檔下載失敗後最多重試次數之非負整數，0代表不重試，預設2(各檔最多下載1+2次)</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>retryInterval</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>2000</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入重試前等待毫秒數之非負整數，預設2000</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>timeFile</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>100000</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入w-ftp各操作之時限毫秒數之正整數，經WFtp之timeLimit傳給w-ftp，其中下載為每檔自傳輸開始起計(另有查詢遠端檔案資訊、列舉、連線、quit等操作各自計時，非單次嘗試之總和)，逾時視為該次失敗，預設100000(100s)</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>timeRound</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Integer</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>0</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入整輪逐檔下載之時限毫秒數之非負整數，0代表不限制，預設0；自列舉檔案後起算，逾時後不再下載與重試，尚未下載完成之檔案皆列於failed(尚未開始下載者attempts為0，逾時當下正在重試之檔為已嘗試次數且msg尾帶timeRound exceeded)，整輪可能超過逾時時刻至多一次檔案之嘗試(含quit與重新連線，各操作各自受timeFile約束)</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>onTrace</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>null</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入觀察回調函數，供測試與診斷以事件同步，收到凍結之事件物件{ type, ... }，回調之拋錯與rejection皆忽略，預設null；type為'ls'({ num }，須下載之檔案數)、'attempt'({ name, attempt }，開始第attempt次下載)、'done'({ name, attempt }，該檔下載完成)、'fail'({ name, attempt, msg }，該次下載失敗)、'retry'({ name, attempt }，等待retryInterval後即將進行第attempt次下載，即第attempt-1次重試)、'reconnect'({ ok, attempt, msg }，重新連線之各次結果，ok為false時msg為錯誤訊息)、'giveup'({ name, attempts, msg }，該檔重試用盡或整輪逾時而放棄)、'expired'({ num }，整輪逾時而未下載之檔案數)</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>debug</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Boolean</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>false</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入是否於opt出現非預期輸入時輸出警告布林值，須恰為true才生效，警告為固定詞彙(不含輸入值)，同一鍵同一行程只警告一次，預設false</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>funLog</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+                <td class="default">
+                
+                    <code>null</code>
+                
+                </td>
+            
+
+            <td class="description last"><p>輸入警告之出口函數，格式為(msg, { fn, reason, key })=&gt;{}，僅opt.debug為true時使用，未給則以console.warn輸出，預設null</p></td>
+        </tr>
+
+    
     </tbody>
 </table>
 
@@ -1980,7 +2625,7 @@
 
         
 <div class="param-desc">
-    <p>回傳Promise，resolve回傳列舉檔案陣列，各元素為檔案資訊物件，內含name、path、isFolder等鍵值，reject回傳錯誤訊息</p>
+    <p>回傳Promise，resolve回傳物件{ files, failed }，files為完整下載之檔案陣列，各元素為檔案資訊物件，內含name、path、isFolder等鍵值，failed為下載失敗之檔案陣列，各元素為內含name、rpath、attempts、msg之物件(全部成功時為空陣列)；reject回傳錯誤，錯誤訊息已遮罩帳密</p>
 </div>
 
 
@@ -1992,6 +2637,216 @@
     <dd>
         
 <span class="param-type">Promise</span>
+
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
+    <h4 class="name" id="optReader"><span class="type-signature"></span>optReader<span class="signature">(fn, opt<span class="signature-attributes">opt</span>)</span><span class="type-signature"> &rarr; {function}</span></h4>
+
+    
+
+
+
+
+<dl class="details">
+    
+    <dt class="tag-description">Description:</dt>
+    <dd class="tag-description"><ul class="dummy"><li><p>取opt之各鍵並檢測(規格: 輸入參數之檢測機制K3、V5、V11), 供downloadFiles與WDwdataFtp共用</p>
+<p>規則:
+opt與各鍵為undefined或null視為未給, 取預設
+給了而檢測函數判為非預期者視為未給, 改用預設, 不報錯
+每個鍵只讀一次, 讀取拋錯(存取器、已撤銷之Proxy)視為未給
+opt.debug為true(非布林視為false)時, 非預期另輸出警告, 出口為opt.funLog(函數)或console.warn;
+警告為固定詞彙, 只含函數名、鍵名、種類描述與所採之預設(程式常數), 不含傳入之值(K9); 同一函數同一鍵每個行程只警告一次
+未宣告之鍵不檢查(opt常整份轉傳, V7)</p>
+<p>wsemi(1.9.79)僅於內部提供同類之opt解析, 未公開, 為免引用內部模組, 本套件以此最小實作暫代, 待wsemi公開後改用</p></li></ul></dd>
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="-_optReader.mjs.html">_optReader.mjs</a>, <a href="-_optReader.mjs.html#line54">line 54</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <h5 class="h5-parameters">Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>fn</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">String</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>輸入函數名字串, 用於警告之前綴</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>opt</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>輸入呼叫端之opt, 非物件視為{}</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5 class="h5-returns">Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>回傳讀取函數(key, def, check, desc, defDesc), check為檢測函數(回布林, 拋錯視為非預期), desc為種類描述(如'a boolean'), defDesc為預設值描述(程式常數字串); 函數帶屬性debug(布林)與funLog(函數或null, 僅debug為true時有值), 為本次所讀之快照</p>
+</div>
+
+
+
+<dl class="param-type">
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">function</span>
 
 
 
@@ -2022,7 +2877,7 @@
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Thu Nov 26 2026 02:11:20 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Thu Nov 26 2026 16:05:31 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
