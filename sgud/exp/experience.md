@@ -19,3 +19,11 @@
 6. **測試鏡像根與預設暫存區**:以修前碼跑新測試(鏡像根)時,修前碼無 `st.fdDownloadTemp` 位置檢查,測試會把 `./_wftpDownloadTemp` 當 `fdDwStorageTemp` 而於 cwd 留下資料夾,使「預設暫存區」之測試於下次因資料夾已存在而誤判;該測試改以哨兵檔判定「未清空、未下載」,不依賴資料夾是否存在。測試中引用 `WDwdataFtp` 之預設資料夾(`./_result` 等)亦會於 cwd 留下資料夾,故測試一律給齊各資料夾,不以空字串觸發預設。
 7. **測試中之外部事件同步**:下載失敗、重連失敗、整輪逾時等情境皆以 `opt.onTrace` 事件為同步點(例如於 `fail` 事件當下變更假伺服器之故障設定、推進假時鐘),不以延時;真實計時器之案(`timeFile` 停滯)門檻取 3000ms,遠大於本機小檔於負載下之下載耗時。
 8. **新增之 src 檔與換行**:`src/` 兩個既有檔為 CRLF(`.editorconfig`),整檔重寫後須轉回 CRLF(否則整檔 diff);`Edit` 工具改既有 CRLF 檔時會保留換行。
+
+## opt 讀取收斂至 wsemi `getOptReader`(2026-11-27,wsemi 1.9.82)
+
+1. **`funLog` 第 2 引數之 `fn` 改為整個 tag**:自寫版為函數名(`'downloadFiles'`),wsemi 版為建立讀取器時給之 tag(`'w-dwdata-ftp downloadFiles'`);警告字樣 `[<tag>] invalid opt.<key>: must be …, using default …` 不變。斷言 `info.fn` 之測試須同改。
+2. **去重表與 wsemi 內部共用**:測試前後重設一律用 `getOptReader.resetWarned()`;修前鏡像(自寫讀取器)下該函數重設不到自寫之去重集合,「重設後再警告」類案因此於修前轉紅,可作為接線證據。
+3. **`downloadFiles` 之 `srLog` 讀取須在建立讀取器之後**:`rd.read('srLog')` 取代原 `readKey`,故 `rd` 之建立前移至函數開頭(`rd` 建立時讀 `opt.debug` 一次,不拋錯,順序不影響行為)。
+4. **測試掛「讀取拋錯之存取器」須在 opt 最終物件上**:`runRound` 以展開語法合併 `optExtra` 時會即時讀取存取器而拋錯於測試自身,故加 `fnOpt` 參數,於傳給 `WDwdataFtp` 前才掛存取器。
+5. **變異 `getOptReader(tag, {})`(讀取器不傳入 opt)使 32 案紅且耗時約 6 分鐘**(各案之重試等待):只跑接線相關之案可縮短,但全檔仍跑較能顯示殺傷面。

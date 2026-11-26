@@ -13,6 +13,7 @@ import ispm from 'wsemi/src/ispm.mjs'
 import cdbl from 'wsemi/src/cdbl.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
+import getOptReader from 'wsemi/src/getOptReader.mjs'
 import getDiagSecrets from 'wsemi/src/getDiagSecrets.mjs'
 import maskDiagText from 'wsemi/src/maskDiagText.mjs'
 import fsIsFolder from 'wsemi/src/fsIsFolder.mjs'
@@ -28,7 +29,6 @@ import fsTreeFolderWithHash from 'wsemi/src/fsTreeFolderWithHash.mjs'
 import fsGetFileBasicHash from 'wsemi/src/fsGetFileBasicHash.mjs'
 import WDwdataBuilder from 'w-dwdata-builder/src/WDwdataBuilder.mjs'
 import downloadFiles from './downloadFiles.mjs'
-import optReader from './_optReader.mjs'
 
 
 /**
@@ -73,7 +73,7 @@ import optReader from './_optReader.mjs'
  * @param {Integer} [opt.timeRound=0] 輸入整輪逐檔下載之時限毫秒數之非負整數，0代表不限制，預設0，詳見downloadFiles
  * @param {Function} [opt.onTrace=null] 輸入觀察回調函數，轉交downloadFiles，供測試與診斷以事件同步，事件種類見downloadFiles，預設null
  * @param {Boolean} [opt.debug=false] 輸入是否於opt出現非預期輸入時輸出警告布林值，須恰為true才生效，警告為固定詞彙(不含輸入值)，同一鍵同一行程只警告一次，並轉交downloadFiles，預設false
- * @param {Function} [opt.funLog=null] 輸入警告之出口函數，格式為(msg, { fn, reason, key })=>{}，僅opt.debug為true時使用，未給則以console.warn輸出，預設null
+ * @param {Function} [opt.funLog=null] 輸入警告之出口函數，格式為(msg, { fn, reason, key })=>{}，其中fn為警告來源之標籤'w-dwdata-ftp WDwdataFtp'(轉交給downloadFiles之鍵由其警告，標籤為'w-dwdata-ftp downloadFiles')，僅opt.debug為true時使用，未給則以console.warn輸出，預設null
  * @param {Number} [opt.timeToleranceRemove=0] 輸入刪除任務之防抖時長，單位ms，預設0，代表不使用
  * @param {Object} [opt.srLog=null] 輸入事件紀錄物件，需提供函數info、warn與error，各接收一紀錄物件，供下載FTP檔案與偵測數據變更時紀錄各階段事件，未提供時不進行紀錄，其中warn目前保留未使用，預設null
  * @param {Boolean} [opt.useShowLog=true] 輸入是否於偵測數據變更過程將錯誤與取消訊息輸出至console布林值，下載FTP檔案階段本身不輸出至console，惟其錯誤往上拋出後仍受此設定影響，預設true
@@ -167,8 +167,8 @@ import optReader from './_optReader.mjs'
  */
 let WDwdataFtp = async(st, opt = {}) => {
 
-    //rd, opt非預期之輸入視為未給改用預設, opt.debug為true時警告(dspec輸入參數之檢測機制K3)
-    let rd = optReader('WDwdataFtp', opt)
+    //rd, opt非預期之輸入視為未給改用預設, opt.debug為true時警告(dspec輸入參數之檢測機制K3), 一律經wsemi getOptReader(取值、檢測、警告之單一擁有者)
+    let rd = getOptReader('w-dwdata-ftp WDwdataFtp', opt)
 
     //useExpandOnOldFiles
     let useExpandOnOldFiles = rd('useExpandOnOldFiles', false, isbol, 'a boolean', 'false')
@@ -241,11 +241,11 @@ let WDwdataFtp = async(st, opt = {}) => {
 
     //optDw, 下載FTP檔案之重試、時限、觀察回調與警告設定, 原樣傳給downloadFiles, 由其檢測與給予預設值(轉傳之鍵由下游檢測)
     let optDw = {
-        retry: optReader.readKey(opt, 'retry'),
-        retryInterval: optReader.readKey(opt, 'retryInterval'),
-        timeFile: optReader.readKey(opt, 'timeFile'),
-        timeRound: optReader.readKey(opt, 'timeRound'),
-        onTrace: optReader.readKey(opt, 'onTrace'),
+        retry: rd.read('retry'),
+        retryInterval: rd.read('retryInterval'),
+        timeFile: rd.read('timeFile'),
+        timeRound: rd.read('timeRound'),
+        onTrace: rd.read('onTrace'),
         debug: rd.debug,
         funLog: rd.funLog,
     }
@@ -255,7 +255,7 @@ let WDwdataFtp = async(st, opt = {}) => {
     timeToleranceRemove = cdbl(timeToleranceRemove)
 
     //srLog, 讀取拋錯(存取器)視為未給
-    let srLog = optReader.readKey(opt, 'srLog')
+    let srLog = rd.read('srLog')
 
     //useShowLog
     let useShowLog = rd('useShowLog', true, isbol, 'a boolean', 'true')

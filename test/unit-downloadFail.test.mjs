@@ -6,7 +6,7 @@ import w from 'wsemi'
 import assert from 'assert'
 import downloadFiles from '../src/downloadFiles.mjs'
 import WDwdataFtp from '../src/WDwdataFtp.mjs'
-import optReader from '../src/_optReader.mjs'
+import getOptReader from 'wsemi/src/getOptReader.mjs'
 import fakeSftpServer from './lib/fakeSftpServer.mjs'
 import fakeFtpServer from './lib/fakeFtpServer.mjs'
 
@@ -803,7 +803,7 @@ describe('downloadFail', function() {
             let optBad = { retry: bad, retryInterval: bad, timeFile: 0, timeRound: bad, onTrace: bad }
 
             //未給debug: 無警告(funLog不被呼叫)
-            optReader.resetWarned()
+            getOptReader.resetWarned()
             let logs0 = []
             let r0 = await dw(env, { ...optBad, funLog: (msg) => logs0.push(msg) })
             assert.strict.deepEqual({ settled: r0.settled, names: r0.names, logs: logs0 }, { settled: 'resolved', names, logs: [] })
@@ -829,7 +829,7 @@ describe('downloadFail', function() {
                 '[w-dwdata-ftp downloadFiles] invalid opt.timeRound: must be a non-negative integer of milliseconds, using default 0',
                 '[w-dwdata-ftp downloadFiles] invalid opt.onTrace: must be a function, using default null',
             ])
-            assert.strict.deepEqual(infos, ['retry', 'retryInterval', 'timeFile', 'timeRound', 'onTrace'].map((key) => ({ fn: 'downloadFiles', reason: 'invalid', key })))
+            assert.strict.deepEqual(infos, ['retry', 'retryInterval', 'timeFile', 'timeRound', 'onTrace'].map((key) => ({ fn: 'w-dwdata-ftp downloadFiles', reason: 'invalid', key }))) //funLog第2引數之fn為wsemi getOptReader之tag(整個'w-dwdata-ftp downloadFiles')
             assert.ok(logs.every((s) => s.indexOf(bad) < 0), '警告不得含輸入值')
 
             //同一鍵同一行程只警告1次
@@ -838,13 +838,13 @@ describe('downloadFail', function() {
             assert.strict.deepEqual(logs2, [])
 
             //有效之輸入不警告(數字字串與0視為有效)
-            optReader.resetWarned()
+            getOptReader.resetWarned()
             let logs3 = []
             await dw(env, { retry: '1', retryInterval: '5', timeFile: '100000', timeRound: 0, onTrace: () => {}, debug: true, funLog: (msg) => logs3.push(msg) })
             assert.strict.deepEqual(logs3, [])
 
             //未給funLog時以console.warn輸出
-            optReader.resetWarned()
+            getOptReader.resetWarned()
             let m = mock.method(console, 'warn', () => {})
             try {
                 await dw(env, { retry: bad, debug: true })
@@ -855,7 +855,7 @@ describe('downloadFail', function() {
             }
         }
         finally {
-            optReader.resetWarned()
+            getOptReader.resetWarned()
             await env.clean()
         }
     })
@@ -972,7 +972,8 @@ describe('downloadFail', function() {
 
     //runRound, 以WDwdataFtp執行一輪, 回傳change事件(濾除執行時間欄位)與srLog收到之info與error紀錄
     //onInfo為srLog.info之同步回調(供以事件同步地於指定階段注入故障)
-    let runRound = async(env, optExtra = {}, onInfo = null) => {
+    //fnOpt為傳給WDwdataFtp前對opt之最後加工函數(opt) => opt(供掛上讀取拋錯之存取器: 以展開語法合併之optExtra會於合併時即讀取存取器)
+    let runRound = async(env, optExtra = {}, onInfo = null, fnOpt = null) => {
         let pm = w.genPm()
         let ms = []
         let msInfo = []
@@ -1001,6 +1002,9 @@ describe('downloadFail', function() {
                 },
             },
             ...optExtra,
+        }
+        if (_.isFunction(fnOpt)) {
+            opt = fnOpt(opt)
         }
         let ev = await WDwdataFtp(env.st, opt)
         ev.on('change', (msg) => {
@@ -1541,7 +1545,7 @@ describe('downloadFail', function() {
         let env = await setup('wdbg_sftp', 'SFTP')
         try {
             let bad = 'bad-value-xyz'
-            optReader.resetWarned()
+            getOptReader.resetWarned()
             let logs = []
             let infos = []
             let round1 = await runRound(env, {
@@ -1564,19 +1568,82 @@ describe('downloadFail', function() {
                 errors: 0,
                 cmp: { numRemove: 0, numAdd: 3, numModify: 0, numSame: 0 },
             })
-            assert.strict.deepEqual(infos.map((v) => `${v.fn}.${v.key}`).sort(), [
-                'WDwdataFtp.funAdd',
-                'WDwdataFtp.funRemove',
-                'WDwdataFtp.timeToleranceRemove',
-                'WDwdataFtp.useExpandOnOldFiles',
-                'WDwdataFtp.useShowLog',
-                'downloadFiles.retry',
+            assert.strict.deepEqual(infos.map((v) => `${v.fn}.${v.key}`).sort(), [ //funLog第2引數之fn為wsemi getOptReader之tag(整個'w-dwdata-ftp <函數名>')
+                'w-dwdata-ftp WDwdataFtp.funAdd',
+                'w-dwdata-ftp WDwdataFtp.funRemove',
+                'w-dwdata-ftp WDwdataFtp.timeToleranceRemove',
+                'w-dwdata-ftp WDwdataFtp.useExpandOnOldFiles',
+                'w-dwdata-ftp WDwdataFtp.useShowLog',
+                'w-dwdata-ftp downloadFiles.retry',
             ])
             assert.ok(logs.every((s) => s.indexOf(bad) < 0 && s.startsWith('[w-dwdata-ftp ')), '警告須為固定詞彙且不含輸入值')
             assert.ok(logs.some((s) => s === '[w-dwdata-ftp WDwdataFtp] invalid opt.useExpandOnOldFiles: must be a boolean, using default false'))
         }
         finally {
-            optReader.resetWarned()
+            getOptReader.resetWarned()
+            await env.clean()
+        }
+    })
+
+    //WDwdataFtp經wsemi getOptReader讀opt(規則R-DL-09): 讀取拋錯(存取器)視為未給, 含轉傳給downloadFiles之鍵(retry等經rd.read取值, 由下游檢測)、srLog、debug
+    it('WDwdataFtp: opt之各鍵讀取拋錯(存取器: 轉傳給downloadFiles之retry、retryInterval、timeFile、timeRound、onTrace, 及srLog、debug)皆視為未給, 不拋錯, 照常運作', async () => {
+        let env = await setup('wrk_sftp', 'SFTP')
+        try {
+            let round1 = await runRound(env, {}, null, (opt) => {
+                for (let k of ['retry', 'retryInterval', 'timeFile', 'timeRound', 'onTrace', 'srLog', 'debug']) {
+                    Object.defineProperty(opt, k, {
+                        enumerable: true,
+                        configurable: true,
+                        get: () => {
+                            throw new Error('getter error')
+                        },
+                    })
+                }
+                return opt
+            })
+            assert.strict.deepEqual({
+                errors: round1.ms.filter((m) => m.type === 'error').length,
+                cmp: getCmp(round1.ms),
+                info: round1.msInfo.length, //srLog之讀取拋錯視為未給, 自訂之srLog不被呼叫
+            }, {
+                errors: 0,
+                cmp: { numRemove: 0, numAdd: 3, numModify: 0, numSame: 0 },
+                info: 0,
+            })
+        }
+        finally {
+            await env.clean()
+        }
+    })
+
+    it('WDwdataFtp: opt.debug為true而opt.funLog讀取拋錯(存取器)時視為未給funLog, 警告改以console.warn輸出(固定詞彙、不含輸入值)', async () => {
+        let env = await setup('wfl_sftp', 'SFTP')
+        let m = mock.method(console, 'warn', () => {})
+        try {
+            getOptReader.resetWarned()
+            let round1 = await runRound(env, { debug: true, useExpandOnOldFiles: 'bad-value-xyz' }, null, (opt) => {
+                Object.defineProperty(opt, 'funLog', {
+                    enumerable: true,
+                    configurable: true,
+                    get: () => {
+                        throw new Error('getter error')
+                    },
+                })
+                return opt
+            })
+            assert.strict.deepEqual({
+                errors: round1.ms.filter((x) => x.type === 'error').length,
+                cmp: getCmp(round1.ms),
+                warns: m.mock.calls.map((c) => c.arguments),
+            }, {
+                errors: 0,
+                cmp: { numRemove: 0, numAdd: 3, numModify: 0, numSame: 0 },
+                warns: [['[w-dwdata-ftp WDwdataFtp] invalid opt.useExpandOnOldFiles: must be a boolean, using default false']],
+            })
+        }
+        finally {
+            m.mock.restore()
+            getOptReader.resetWarned()
             await env.clean()
         }
     })

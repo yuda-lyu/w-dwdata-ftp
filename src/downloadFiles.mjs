@@ -7,6 +7,7 @@ import isestr from 'wsemi/src/isestr.mjs'
 import iseint from 'wsemi/src/iseint.mjs'
 import delay from 'wsemi/src/delay.mjs'
 import getTrace from 'wsemi/src/getTrace.mjs'
+import getOptReader from 'wsemi/src/getOptReader.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
 import getDiagSecrets from 'wsemi/src/getDiagSecrets.mjs'
 import maskDiagText from 'wsemi/src/maskDiagText.mjs'
@@ -16,7 +17,6 @@ import fsDeleteFile from 'wsemi/src/fsDeleteFile.mjs'
 import fsCleanFolder from 'wsemi/src/fsCleanFolder.mjs'
 import fsTreeFolder from 'wsemi/src/fsTreeFolder.mjs'
 import WFtp from 'w-ftp/src/WFtp.mjs'
-import optReader from './_optReader.mjs'
 
 
 /**
@@ -52,7 +52,7 @@ import optReader from './_optReader.mjs'
  * @param {Integer} [opt.timeRound=0] 輸入整輪逐檔下載之時限毫秒數之非負整數，0代表不限制，預設0；自列舉檔案後起算，逾時後不再下載與重試，尚未下載完成之檔案皆列於failed(尚未開始下載者attempts為0，逾時當下正在重試之檔為已嘗試次數且msg尾帶timeRound exceeded)，整輪可能超過逾時時刻至多一次檔案之嘗試(含quit與重新連線，各操作各自受timeFile約束)
  * @param {Function} [opt.onTrace=null] 輸入觀察回調函數，供測試與診斷以事件同步，收到凍結之事件物件{ type, ... }，回調之拋錯與rejection皆忽略，預設null；type為'ls'({ num }，須下載之檔案數)、'attempt'({ name, attempt }，開始第attempt次下載)、'done'({ name, attempt }，該檔下載完成)、'fail'({ name, attempt, msg }，該次下載失敗)、'retry'({ name, attempt }，等待retryInterval後即將進行第attempt次下載，即第attempt-1次重試)、'reconnect'({ ok, attempt, msg }，重新連線之各次結果，ok為false時msg為錯誤訊息)、'giveup'({ name, attempts, msg }，該檔重試用盡或整輪逾時而放棄)、'expired'({ num }，整輪逾時而未下載之檔案數)
  * @param {Boolean} [opt.debug=false] 輸入是否於opt出現非預期輸入時輸出警告布林值，須恰為true才生效，警告為固定詞彙(不含輸入值)，同一鍵同一行程只警告一次，預設false
- * @param {Function} [opt.funLog=null] 輸入警告之出口函數，格式為(msg, { fn, reason, key })=>{}，僅opt.debug為true時使用，未給則以console.warn輸出，預設null
+ * @param {Function} [opt.funLog=null] 輸入警告之出口函數，格式為(msg, { fn, reason, key })=>{}，其中fn為警告來源之標籤'w-dwdata-ftp downloadFiles'(由WDwdataFtp轉入時為其呼叫downloadFiles之標籤，非WDwdataFtp之標籤)，僅opt.debug為true時使用，未給則以console.warn輸出，預設null
  * @returns {Promise} 回傳Promise，resolve回傳物件{ files, failed }，files為完整下載之檔案陣列，各元素為檔案資訊物件，內含name、path、isFolder等鍵值，failed為下載失敗之檔案陣列，各元素為內含name、rpath、attempts、msg之物件(全部成功時為空陣列)；reject回傳錯誤，錯誤訊息已遮罩帳密
  * @example
  *
@@ -95,8 +95,11 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
     let errTemp = null
     let isFail = false
 
+    //rd, opt非預期之輸入視為未給改用預設, opt.debug為true時警告(dspec輸入參數之檢測機制K3), 一律經wsemi getOptReader(取值、檢測、警告之單一擁有者)
+    let rd = getOptReader('w-dwdata-ftp downloadFiles', opt)
+
     //srLog, 讀取拋錯(存取器)視為未給
-    let srLog = optReader.readKey(opt, 'srLog')
+    let srLog = rd.read('srLog')
 
     //srLogInfo
     let srLogInfo = get(srLog, 'info', null)
@@ -119,9 +122,6 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
     else {
         srLogError = () => {}
     }
-
-    //rd, opt非預期之輸入視為未給改用預設, opt.debug為true時警告(dspec輸入參數之檢測機制K3)
-    let rd = optReader('downloadFiles', opt)
 
     //retry, 各檔下載失敗後最多重試次數
     let retry = Number(rd('retry', 2, (v) => iseint(v, { use: 'count' }), 'a non-negative integer', '2'))
