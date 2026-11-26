@@ -3,6 +3,7 @@ import get from 'lodash-es/get.js'
 import size from 'lodash-es/size.js'
 import each from 'lodash-es/each.js'
 import map from 'lodash-es/map.js'
+import filter from 'lodash-es/filter.js'
 import cloneDeep from 'lodash-es/cloneDeep.js'
 import isbol from 'wsemi/src/isbol.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
@@ -12,16 +13,22 @@ import ispm from 'wsemi/src/ispm.mjs'
 import cdbl from 'wsemi/src/cdbl.mjs'
 import pmSeries from 'wsemi/src/pmSeries.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
+import getDiagSecrets from 'wsemi/src/getDiagSecrets.mjs'
+import maskDiagText from 'wsemi/src/maskDiagText.mjs'
 import fsIsFolder from 'wsemi/src/fsIsFolder.mjs'
+import fsIsFile from 'wsemi/src/fsIsFile.mjs'
 import fsCopyFile from 'wsemi/src/fsCopyFile.mjs'
+import fsDeleteFile from 'wsemi/src/fsDeleteFile.mjs'
 import fsCleanFolder from 'wsemi/src/fsCleanFolder.mjs'
 import fsCreateFolder from 'wsemi/src/fsCreateFolder.mjs'
 import fsDeleteFolder from 'wsemi/src/fsDeleteFolder.mjs'
 import fsSyncFolder from 'wsemi/src/fsSyncFolder.mjs'
+import fsTreeFolder from 'wsemi/src/fsTreeFolder.mjs'
 import fsTreeFolderWithHash from 'wsemi/src/fsTreeFolderWithHash.mjs'
 import fsGetFileBasicHash from 'wsemi/src/fsGetFileBasicHash.mjs'
 import WDwdataBuilder from 'w-dwdata-builder/src/WDwdataBuilder.mjs'
 import downloadFiles from './downloadFiles.mjs'
+import optReader from './_optReader.mjs'
 
 
 /**
@@ -29,7 +36,11 @@ import downloadFiles from './downloadFiles.mjs'
  *
  * 執行階段最新hash數據放置於fdDwAttime，前次hash數據會於結束前自動備份至fdDwCurrent
  *
- * 執行階段最新數據放置於fdDwStorageTemp，前次數據放置於fdDwStorage，於結束前會將fdDwStorage清空，將fdDwStorageTemp複製至fdDwStorage
+ * 執行階段最新數據放置於fdDwStorageTemp，前次數據放置於fdDwStorage，於結束前會將fdDwStorageTemp內已處理之檔案搬入fdDwStorage(全量模式為鏡像同步，增量模式為複製)，再清空fdDwStorageTemp
+ *
+ * 下載階段：逐檔下載，某檔失敗時重新連線後重試(opt.retry)，重試用盡之檔不視為整輪失敗，僅不納入本輪新下載檔案(全量模式沿用fdDwStorage內前次檔案，視為未變更，不會被當成已刪除)；連線、ls失敗或全部檔案皆失敗則取消該輪，詳見downloadFiles
+ *
+ * 主階段(funAdd、funModify、funRemove)處理失敗、被略過或主階段被取消時，未處理成功之新增/變更檔不會搬入fdDwStorage，刪除失敗或未處理之檔不會自fdDwStorage移除，下輪比對仍有差異而再處理，故為至少一次語意，funAdd、funModify、funRemove須可重複執行
  *
  * @param {String} st 輸入設定FTP連線資訊物件
  * @param {String} [st.transportation='FTP'] 輸入傳輸協定字串，可選'FTP'、'SFTP'，預設'FTP'
@@ -38,7 +49,8 @@ import downloadFiles from './downloadFiles.mjs'
  * @param {String} [st.username=''] 輸入帳號字串，預設''
  * @param {String} [st.password=''] 輸入密碼字串，預設''
  * @param {String} [st.fdIni='./'] 輸入同步資料夾字串，預設'./'
- * @param {Object} [opt={}] 輸入設定物件，預設{}
+ * @param {String} [st.fdDownloadTemp] 輸入w-ftp下載暫存區資料夾字串，經st原樣轉交downloadFiles，不得為opt.fdDwStorageTemp或其內，詳見downloadFiles
+ * @param {Object} [opt={}] 輸入設定物件，預設{}；非預期之輸入視為未給改用預設
  * @param {Boolean} [opt.useExpandOnOldFiles=false] 輸入來源檔案是否僅為增量檔案布林值，預設false
  * @param {String} [opt.fdTagRemove='./_tagRemove'] 輸入暫存標記為刪除數據資料夾字串，預設'./_tagRemove'
  * @param {String} [opt.fdDwStorageTemp='./_dwStorageTemp'] 輸入最新下載檔案存放資料夾字串，預設'./_dwStorageTemp'
@@ -55,6 +67,13 @@ import downloadFiles from './downloadFiles.mjs'
  * @param {Function} [opt.funRemove=null] 輸入當有資料需刪除時，需要連動處理之函數，預設null
  * @param {Function} [opt.funAfterStart=null] 輸入偵測程序剛開始啟動時，需要處理之函數，預設null
  * @param {Function} [opt.funBeforeEnd=null] 輸入偵測程序要結束前，需要處理之函數，預設null
+ * @param {Integer} [opt.retry=2] 輸入各檔下載失敗後最多重試次數之非負整數，每次重試前會先重新連線，0代表不重試，預設2，詳見downloadFiles
+ * @param {Integer} [opt.retryInterval=2000] 輸入重試前等待毫秒數之非負整數，預設2000，詳見downloadFiles
+ * @param {Integer} [opt.timeFile=100000] 輸入各檔單次下載之時限毫秒數之正整數，SFTP自w-ftp 1.0.75起亦受此時限約束，大檔須自行給較大值，預設100000，詳見downloadFiles
+ * @param {Integer} [opt.timeRound=0] 輸入整輪逐檔下載之時限毫秒數之非負整數，0代表不限制，預設0，詳見downloadFiles
+ * @param {Function} [opt.onTrace=null] 輸入觀察回調函數，轉交downloadFiles，供測試與診斷以事件同步，事件種類見downloadFiles，預設null
+ * @param {Boolean} [opt.debug=false] 輸入是否於opt出現非預期輸入時輸出警告布林值，須恰為true才生效，警告為固定詞彙(不含輸入值)，同一鍵同一行程只警告一次，並轉交downloadFiles，預設false
+ * @param {Function} [opt.funLog=null] 輸入警告之出口函數，格式為(msg, { fn, reason, key })=>{}，僅opt.debug為true時使用，未給則以console.warn輸出，預設null
  * @param {Number} [opt.timeToleranceRemove=0] 輸入刪除任務之防抖時長，單位ms，預設0，代表不使用
  * @param {Object} [opt.srLog=null] 輸入事件紀錄物件，需提供函數info、warn與error，各接收一紀錄物件，供下載FTP檔案與偵測數據變更時紀錄各階段事件，未提供時不進行紀錄，其中warn目前保留未使用，預設null
  * @param {Boolean} [opt.useShowLog=true] 輸入是否於偵測數據變更過程將錯誤與取消訊息輸出至console布林值，下載FTP檔案階段本身不輸出至console，惟其錯誤往上拋出後仍受此設定影響，預設true
@@ -148,117 +167,98 @@ import downloadFiles from './downloadFiles.mjs'
  */
 let WDwdataFtp = async(st, opt = {}) => {
 
+    //rd, opt非預期之輸入視為未給改用預設, opt.debug為true時警告(dspec輸入參數之檢測機制K3)
+    let rd = optReader('WDwdataFtp', opt)
+
     //useExpandOnOldFiles
-    let useExpandOnOldFiles = get(opt, 'useExpandOnOldFiles')
-    if (!isbol(useExpandOnOldFiles)) {
-        useExpandOnOldFiles = false
-    }
+    let useExpandOnOldFiles = rd('useExpandOnOldFiles', false, isbol, 'a boolean', 'false')
 
     //fdTagRemove
-    let fdTagRemove = get(opt, 'fdTagRemove')
-    if (!isestr(fdTagRemove)) {
-        fdTagRemove = `./_tagRemove`
-    }
+    let fdTagRemove = rd('fdTagRemove', `./_tagRemove`, isestr, 'a non-empty string', `'./_tagRemove'`)
 
     //fdDwStorageTemp, 最新下載檔案存放資料夾
-    let fdDwStorageTemp = get(opt, 'fdDwStorageTemp')
-    if (!isestr(fdDwStorageTemp)) {
-        fdDwStorageTemp = `./_dwStorageTemp`
-    }
+    let fdDwStorageTemp = rd('fdDwStorageTemp', `./_dwStorageTemp`, isestr, 'a non-empty string', `'./_dwStorageTemp'`)
     if (!fsIsFolder(fdDwStorageTemp)) {
         fsCreateFolder(fdDwStorageTemp)
     }
 
     //fdDwStorage, 合併儲存檔案資料夾
-    let fdDwStorage = get(opt, 'fdDwStorage')
-    if (!isestr(fdDwStorage)) {
-        fdDwStorage = `./_dwStorage`
-    }
+    let fdDwStorage = rd('fdDwStorage', `./_dwStorage`, isestr, 'a non-empty string', `'./_dwStorage'`)
     if (!fsIsFolder(fdDwStorage)) {
         fsCreateFolder(fdDwStorage)
     }
 
     //fdDwAttime
-    let fdDwAttime = get(opt, 'fdDwAttime')
-    if (!isestr(fdDwAttime)) {
-        fdDwAttime = `./_dwAttime`
-    }
+    let fdDwAttime = rd('fdDwAttime', `./_dwAttime`, isestr, 'a non-empty string', `'./_dwAttime'`)
     if (!fsIsFolder(fdDwAttime)) {
         fsCreateFolder(fdDwAttime)
     }
 
     //fdDwCurrent
-    let fdDwCurrent = get(opt, 'fdDwCurrent')
-    if (!isestr(fdDwCurrent)) {
-        fdDwCurrent = `./_dwCurrent`
-    }
+    let fdDwCurrent = rd('fdDwCurrent', `./_dwCurrent`, isestr, 'a non-empty string', `'./_dwCurrent'`)
     if (!fsIsFolder(fdDwCurrent)) {
         fsCreateFolder(fdDwCurrent)
     }
 
     //fdResult
-    let fdResult = get(opt, 'fdResult')
-    if (!isestr(fdResult)) {
-        fdResult = `./_result`
-    }
+    let fdResult = rd('fdResult', `./_result`, isestr, 'a non-empty string', `'./_result'`)
     if (!fsIsFolder(fdResult)) {
         fsCreateFolder(fdResult)
     }
 
     //fdTaskCpActualSrc
-    let fdTaskCpActualSrc = get(opt, 'fdTaskCpActualSrc')
-    if (!isestr(fdTaskCpActualSrc)) {
-        fdTaskCpActualSrc = `./_taskCpActualSrc`
-    }
+    let fdTaskCpActualSrc = rd('fdTaskCpActualSrc', `./_taskCpActualSrc`, isestr, 'a non-empty string', `'./_taskCpActualSrc'`)
     if (!fsIsFolder(fdTaskCpActualSrc)) {
         fsCreateFolder(fdTaskCpActualSrc)
     }
 
     //fdTaskCpSrc
-    let fdTaskCpSrc = get(opt, 'fdTaskCpSrc')
-    if (!isestr(fdTaskCpSrc)) {
-        fdTaskCpSrc = './_taskCpSrc'
-    }
+    let fdTaskCpSrc = rd('fdTaskCpSrc', './_taskCpSrc', isestr, 'a non-empty string', `'./_taskCpSrc'`)
     if (!fsIsFolder(fdTaskCpSrc)) {
         fsCreateFolder(fdTaskCpSrc)
     }
 
     //funDownload
-    let funDownload = get(opt, 'funDownload')
+    let funDownload = rd('funDownload', null, isfun, 'a function', 'the built-in function')
 
     //funGetCurrent
-    let funGetCurrent = get(opt, 'funGetCurrent')
+    let funGetCurrent = rd('funGetCurrent', null, isfun, 'a function', 'the built-in function')
 
     //funAdd
-    let funAdd = get(opt, 'funAdd')
+    let funAdd = rd('funAdd', null, isfun, 'a function', 'the built-in function')
 
     //funModify
-    let funModify = get(opt, 'funModify')
+    let funModify = rd('funModify', null, isfun, 'a function', 'the built-in function')
 
     //funRemove
-    let funRemove = get(opt, 'funRemove')
+    let funRemove = rd('funRemove', null, isfun, 'a function', 'the built-in function')
 
     //funAfterStartCall
-    let funAfterStartCall = get(opt, 'funAfterStart')
+    let funAfterStartCall = rd('funAfterStart', null, isfun, 'a function', 'null')
 
     //funBeforeEndCall
-    let funBeforeEndCall = get(opt, 'funBeforeEnd')
+    let funBeforeEndCall = rd('funBeforeEnd', null, isfun, 'a function', 'null')
+
+    //optDw, 下載FTP檔案之重試、時限、觀察回調與警告設定, 原樣傳給downloadFiles, 由其檢測與給予預設值(轉傳之鍵由下游檢測)
+    let optDw = {
+        retry: optReader.readKey(opt, 'retry'),
+        retryInterval: optReader.readKey(opt, 'retryInterval'),
+        timeFile: optReader.readKey(opt, 'timeFile'),
+        timeRound: optReader.readKey(opt, 'timeRound'),
+        onTrace: optReader.readKey(opt, 'onTrace'),
+        debug: rd.debug,
+        funLog: rd.funLog,
+    }
 
     //timeToleranceRemove
-    let timeToleranceRemove = get(opt, 'timeToleranceRemove')
-    if (!isp0int(timeToleranceRemove)) {
-        timeToleranceRemove = 0
-    }
+    let timeToleranceRemove = rd('timeToleranceRemove', 0, isp0int, 'a non-negative integer', '0')
     timeToleranceRemove = cdbl(timeToleranceRemove)
 
-    //srLog
-    let srLog = get(opt, 'srLog', null)
+    //srLog, 讀取拋錯(存取器)視為未給
+    let srLog = optReader.readKey(opt, 'srLog')
 
     //useShowLog
-    let useShowLog = get(opt, 'useShowLog')
-    if (!isbol(useShowLog)) {
-        useShowLog = true
-    }
+    let useShowLog = rd('useShowLog', true, isbol, 'a boolean', 'true')
 
     //srLogInfo
     let srLogInfo = get(srLog, 'info', null)
@@ -281,6 +281,9 @@ let WDwdataFtp = async(st, opt = {}) => {
     else {
         srLogError = () => {}
     }
+
+    //secrets, 帳密, 外來錯誤文字(檔案系統、後端之錯誤原文)經遮罩後才輸出(dspec診斷輸出與遮罩D1)
+    let secrets = getDiagSecrets({ username: get(st, 'username'), password: get(st, 'password') })
 
     //getFilesHash
     let getFilesHash = async(vfps) => {
@@ -326,6 +329,11 @@ let WDwdataFtp = async(st, opt = {}) => {
         return kp
     }
 
+    //hasId, id是否為kp之自有鍵(不用lodash之has: 其以路徑解析鍵名, 含點之檔名如log.1會被誤判為log之索引)
+    let hasId = (kp, id) => {
+        return Object.prototype.hasOwnProperty.call(kp, id)
+    }
+
     //mergeLtdt
     let mergeLtdt = (ltdtNew, ltdtOld) => {
         let kpNew = cvLtdtToKp(ltdtNew)
@@ -350,19 +358,42 @@ let WDwdataFtp = async(st, opt = {}) => {
     //funDownloadDef
     let funDownloadDef = async() => {
 
-        //vfpsDw, 為下載所得新增檔案清單, 檔案放置於fdDwStorageTemp內
-        vfpsDw = await downloadFiles(st, fdDwStorageTemp, {
+        //rDw, 下載所得, files為完整下載之新增檔案清單(檔案放置於fdDwStorageTemp內), failed為重試用盡仍失敗之檔案清單
+        let rDw = await downloadFiles(st, fdDwStorageTemp, {
             srLog,
+            ...optDw,
         })
-        // console.log('vfpsDw', vfpsDw[0], size(vfpsDw))
+
+        //vfps, 本輪新增檔案清單, 須下載與計算hash皆完成才設為vfpsDw(結束前搬移之依據), 中途失敗者不得搬入
+        let vfps = rDw.files
+        // console.log('vfps', vfps[0], size(vfps))
+
+        //keep, 全量模式下清單內沒有之檔案會被視為已刪除(比對後連動刪除fdResult內數據, 並自fdDwStorage鏡像移除),
+        //故重試用盡仍失敗之檔案若fdDwStorage內有前次檔案, 複製進fdDwStorageTemp沿用(內容與fdDwStorage相同, 視為未變更), 無前次檔案者(新檔案)則僅不納入;
+        //增量模式下fdDwStorage為累積存放不會被刪除, 不須沿用
+        if (!useExpandOnOldFiles && size(rDw.failed) > 0) {
+            each(rDw.failed, (v) => {
+                let fpPrev = `${fdDwStorage}/${v.name}`
+                if (fsIsFile(fpPrev)) {
+                    let r = fsCopyFile(fpPrev, `${fdDwStorageTemp}/${v.name}`)
+                    if (r.error) {
+                        throw new Error(r.error)
+                    }
+                    srLogInfo({ event: 'keep-previous-file', name: v.name, msg: 'done' })
+                }
+            })
+            vfps = filter(fsTreeFolder(fdDwStorageTemp, 1), (v) => {
+                return !v.isFolder //僅使用檔案
+            })
+        }
 
         //check, 無檔案須報錯, 底層會中止與計算hash與計算檔案hash差異
-        if (size(vfpsDw) === 0) {
+        if (size(vfps) === 0) {
             throw new Error(`no files`)
         }
 
         //ltdtHashNewTemp, 計算新增檔案hash值
-        let ltdtHashNewTemp = await getFilesHash(vfpsDw)
+        let ltdtHashNewTemp = await getFilesHash(vfps)
 
         //ltdtHashNew
         let ltdtHashNew = []
@@ -396,6 +427,9 @@ let WDwdataFtp = async(st, opt = {}) => {
             fs.writeFileSync(fp, JSON.stringify(v), 'utf8')
 
         })
+
+        //vfpsDw, 為下載所得新增檔案清單, 檔案放置於fdDwStorageTemp內
+        vfpsDw = vfps
 
         return ltdtHashNew
     }
@@ -478,6 +512,39 @@ let WDwdataFtp = async(st, opt = {}) => {
         funModify = funModifyDef
     }
 
+    //kpHashNew, kpHashCur, 本輪下載所得與funGetCurrent所得之檔案hash, 以id為鍵, 供結束前判斷哪些檔案為新增或變更
+    let kpHashNew = null
+    let kpHashCur = null
+    let funDownloadOri = funDownload
+    funDownload = async() => {
+        let r = await funDownloadOri()
+        kpHashNew = cvLtdtToKp(r)
+        return r
+    }
+    let funGetCurrentOri = funGetCurrent
+    funGetCurrent = async() => {
+        let r = await funGetCurrentOri()
+        kpHashCur = cvLtdtToKp(r)
+        return r
+    }
+
+    //idsAddOk, idsRemoveOk, 本輪主階段已處理成功(funAdd、funModify、funRemove回傳而未拋錯)之檔案id
+    let idsAddOk = new Set()
+    let idsRemoveOk = new Set()
+    let wrapOk = (fun, ids) => {
+        return async(v) => {
+            let r = fun(v)
+            if (ispm(r)) {
+                r = await r
+            }
+            ids.add(v.id)
+            return r
+        }
+    }
+    funAdd = wrapOk(funAdd, idsAddOk)
+    funModify = wrapOk(funModify, idsAddOk)
+    funRemove = wrapOk(funRemove, idsRemoveOk)
+
     //funBeforeEndNec
     let funBeforeEndNec = async() => {
 
@@ -489,12 +556,46 @@ let WDwdataFtp = async(st, opt = {}) => {
                 throw new Error(`no files`)
             }
 
+            //kpHashBase, 比對基準之檔案hash, 主階段於取得既有數據前即被取消(funGetCurrent未完成)時, 改取fdDwStorage內檔案之hash
+            let kpHashBase = kpHashCur
+            if (kpHashBase === null) {
+                kpHashBase = cvLtdtToKp(await treeFolderAndGetFilesHash(fdDwStorage))
+            }
+
+            //idsPending, 新增或變更(與比對基準之hash不同)而主階段未處理成功(處理失敗、被略過或主階段被取消)之檔案id,
+            //不得搬入fdDwStorage, 否則下輪比對為無差異而永遠不再處理
+            let idsPending = new Set()
+            each(kpHashNew, (hash, id) => {
+                let isChanged = !hasId(kpHashBase, id) || kpHashBase[id] !== hash
+                if (isChanged && !idsAddOk.has(id)) {
+                    idsPending.add(id)
+                }
+            })
+
+            //idsPendingRemove, 全量模式下比對基準有而本輪下載無(將被鏡像刪除)且刪除任務未處理成功之檔案id, 須保留於fdDwStorage使下輪再處理刪除
+            let idsPendingRemove = new Set()
+            if (!useExpandOnOldFiles) {
+                each(kpHashBase, (hash, id) => {
+                    if (!hasId(kpHashNew, id) && !idsRemoveOk.has(id)) {
+                        idsPendingRemove.add(id)
+                    }
+                })
+            }
+            if (size(idsPending) > 0 || size(idsPendingRemove) > 0) {
+                srLogInfo({ event: 'move-files-to-storage', num: size(idsPending), numRemove: size(idsPendingRemove), msg: 'unprocessed files are not moved' })
+            }
+
             //useExpandOnOldFiles
             if (useExpandOnOldFiles) {
                 //增量模式, 僅將新下載檔案儲存至fdDwStorage
 
-                //複製fdDwStorageTemp內新下載檔案至合併儲存資料夾fdDwStorage
+                //複製fdDwStorageTemp內新下載檔案至合併儲存資料夾fdDwStorage, 未處理成功者不複製
                 each(vfpsDw, (v) => {
+
+                    //check
+                    if (idsPending.has(v.name)) {
+                        return
+                    }
 
                     //fsCopyFile
                     let fpSrc = v.path
@@ -512,6 +613,27 @@ let WDwdataFtp = async(st, opt = {}) => {
             else {
                 //全量模式, 將新下載檔案視為全部檔案並儲存至fdDwStorage
 
+                //未處理成功之新增/變更檔, 於fdDwStorageTemp內還原為fdDwStorage內之前次檔案(無前次檔案者移除), 使其後之鏡像同步不變更之
+                each([...idsPending], (id) => {
+                    let fpPrev = `${fdDwStorage}/${id}`
+                    let fpTemp = `${fdDwStorageTemp}/${id}`
+                    let r = fsIsFile(fpPrev) ? fsCopyFile(fpPrev, fpTemp) : fsDeleteFile(fpTemp)
+                    if (r.error) {
+                        throw new Error(r.error)
+                    }
+                })
+
+                //未處理成功之刪除檔, 自fdDwStorage補回fdDwStorageTemp, 使其後之鏡像同步不刪除之
+                each([...idsPendingRemove], (id) => {
+                    let fpPrev = `${fdDwStorage}/${id}`
+                    if (fsIsFile(fpPrev)) {
+                        let r = fsCopyFile(fpPrev, `${fdDwStorageTemp}/${id}`)
+                        if (r.error) {
+                            throw new Error(r.error)
+                        }
+                    }
+                })
+
                 //fsSyncFolder, 將fdDwStorageTemp完全同步至fdDwStorage
                 await fsSyncFolder(fdDwStorageTemp, fdDwStorage)
 
@@ -523,7 +645,7 @@ let WDwdataFtp = async(st, opt = {}) => {
             srLogInfo({ event: 'move-files-to-storage', msg: 'done' })
         }
         catch (err) {
-            srLogError({ event: 'move-files-to-storage', msg: getErrorMessage(err) })
+            srLogError({ event: 'move-files-to-storage', msg: maskDiagText(getErrorMessage(err), secrets) })
         }
 
     }

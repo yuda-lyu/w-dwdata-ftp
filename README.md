@@ -11,6 +11,24 @@ A downloader for ftp data.
 ## Documentation
 To view documentation or get support, visit [docs](https://yuda-lyu.github.io/w-dwdata-ftp/global.html).
 
+## Download behavior
+Requires `w-ftp` 1.0.75 or later. `downloadFiles` and `WDwdataFtp` never hand an incomplete file to the next stage:
+
+* **Per-file download with retry.** Only the files in the first level of `st.fdIni` are downloaded, one by one. When a file fails (connection lost, timeout, size mismatch reported by `w-ftp`), the connection is closed, re-established (verified with `ls`) and the file is retried, at most `opt.retry` times (default `2`), waiting `opt.retryInterval` (default `2000` ms) before each retry.
+* **A file that keeps failing does not fail the round.** It is listed in `failed` (`{ name, rpath, attempts, msg }`), is not in `files`, and leaves no residue in the target folder; the other files are still downloaded.
+* **The whole round fails (the promise rejects and the target folder is emptied)** when the connection cannot be established, `ls` fails, the re-connection fails, or every file that has to be downloaded fails. An empty list is never handed over as a success.
+* **`opt.timeFile`** (default `100000` ms) is the time limit of one download attempt of one file and is passed to `w-ftp` as `timeLimit`; since `w-ftp` 1.0.75 it also limits SFTP, so large files need a larger value. **`opt.timeRound`** (default `0`, no limit) limits the whole round: after it expires no more files are downloaded or retried, and the remaining files are listed in `failed` (`attempts` is `0` for the files that were not started).
+* **`st.fdDownloadTemp`** (the temp folder of `w-ftp`, default `./_wftpDownloadTemp`) must not be `fdDwStorageTemp` or inside it.
+* **`WDwdataFtp`, full mode:** a file that failed to download keeps its previous version in `fdDwStorage` (it is not treated as deleted).
+* **`WDwdataFtp`, processing:** only files processed successfully by `funAdd`, `funModify` and `funRemove` are moved into (or removed from) `fdDwStorage`. A file whose processing failed or was skipped stays unprocessed and is processed again in the next round, so these functions must be safe to run more than once for the same file (at-least-once). This holds for the default comparison base (the files in `fdDwStorage`); a custom `funGetCurrent` that reads another store is outside of it, and with a custom `funDownload` no downloaded file is moved into `fdDwStorage` at all.
+* **Diagnostics:** `opt.onTrace` receives frozen events `{ type, ... }` (`ls`, `attempt`, `done`, `fail`, `retry`, `reconnect`, `giveup`, `expired`; see the JSDoc of `downloadFiles`), errors it throws are ignored. With `opt.debug` set to `true`, an unexpected option value (which falls back to its default) is reported through `opt.funLog(msg, { fn, reason, key })` or `console.warn`, without the value. Credentials are masked in the error texts of the server.
+
+## Breaking changes
+* `downloadFiles` now resolves `{ files, failed }` instead of an array of files (no compatibility form is kept). A caller that mirrors the result (a file that is not in `files` is treated as deleted) has to handle `failed` itself, for example by reusing the previous version of the files in `failed`.
+* The completeness of every file is verified by `w-ftp` (1.0.75 or later: the local size must equal the remote size), not by this package. An FTP server that does not support `SIZE` cannot be verified, so downloads from it are rejected and every file fails.
+* As documented, only the files in the first level of `st.fdIni` are downloaded. Earlier `w-ftp` versions ignored this limit for SFTP and also put files of sub-folders into the temp folder; they are no longer downloaded.
+* `st.fdDownloadTemp` is checked (see above), and the default time limit of one file (`100000` ms) now also applies to SFTP.
+
 ## Installation
 
 ### Using npm(ES6 module):

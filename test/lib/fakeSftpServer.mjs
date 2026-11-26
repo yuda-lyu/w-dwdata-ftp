@@ -19,7 +19,13 @@ let { STATUS_CODE } = utils.sftp
  * @param {String} [opt.username='u1'] 輸入允許登入之帳號字串，預設'u1'
  * @param {String} [opt.password='p1'] 輸入允許登入之密碼字串，預設'p1'
  * @param {Integer} [opt.port=0] 輸入監聽port正整數，預設0代表由系統指派可用port
- * @returns {Promise} 回傳Promise，resolve回傳伺服器物件，內含實際監聽port正整數與關閉伺服器函數close
+ * @param {String} [opt.breakOn=null] 輸入下載中途斷線之檔名字串，客戶端讀取該檔offset達breakAtBytes時伺服器即中斷該連線，用以模擬下載中途連線中斷，預設null代表不中斷
+ * @param {Integer} [opt.breakAtBytes=65536] 輸入breakOn所指檔案開始中斷之offset位元組數，預設65536
+ * @param {Integer} [opt.breakTimes=Infinity] 輸入breakOn最多中斷之連線次數，用盡後該檔即正常提供，用以模擬重連後重試成功，預設Infinity(每次皆中斷)
+ * @param {Boolean} [opt.failLs=false] 輸入是否令列舉資料夾(OPENDIR)失敗之布林值，用以模擬ls失敗，預設false
+ * @param {Boolean} [opt.denyAuth=false] 輸入是否拒絕所有認證之布林值，用以模擬(重新)連線失敗，預設false
+ * @param {String} [opt.stallOn=null] 輸入下載停滯之檔名字串，客戶端讀取該檔之任何區塊時伺服器皆不回應(連線維持)，用以模擬下載逾時，預設null代表不停滯
+ * @returns {Promise} 回傳Promise，resolve回傳伺服器物件，內含實際監聽port正整數、關閉伺服器函數close與執行期變更故障設定之函數setFault(物件，鍵同breakOn、breakAtBytes、breakTimes、failLs、denyAuth、stallOn，未給之鍵不變)
  */
 let fakeSftpServer = async(opt = {}) => {
 
@@ -34,6 +40,19 @@ let fakeSftpServer = async(opt = {}) => {
 
     //port, 0代表由系統指派可用port, 供mocha平行測試時避免衝突
     let port = opt.port || 0
+
+    //fault, 故障注入設定, 預設全不啟用, 可由setFault於執行期變更, 供模擬下載中途斷線與ls失敗
+    let fault = {
+        breakOn: opt.breakOn || null,
+        breakAtBytes: Number.isInteger(opt.breakAtBytes) ? opt.breakAtBytes : 65536,
+        breakTimes: Number.isInteger(opt.breakTimes) ? opt.breakTimes : Infinity,
+        failLs: opt.failLs === true,
+        denyAuth: opt.denyAuth === true,
+        stallOn: opt.stallOn || null,
+    }
+
+    //brokenClients, 已被中斷之連線, 每條連線至多計1次中斷
+    let brokenClients = new WeakSet()
 
     //hostKeys, 執行期即時生成
     //ssh2(1.17.0)之generateKeyPairSync有1/256機率產生無法解析之金鑰, 故生成後須以parseKey回驗, 失敗則重生, 否則Server會拋出'Cannot parse privateKey: Malformed OpenSSH private key'
@@ -69,7 +88,7 @@ let fakeSftpServer = async(opt = {}) => {
     }
 
     //bindSftp
-    let bindSftp = (sftp) => {
+    let bindSftp = (sftp, client) => {
 
         //handles, 記錄已開啟之資料夾與檔案
         let handles = {}
@@ -103,6 +122,9 @@ let fakeSftpServer = async(opt = {}) => {
         })
 
         sftp.on('OPENDIR', (id, p) => {
+            if (fault.failLs) {
+                return sftp.status(id, STATUS_CODE.FAILURE) //模擬ls失敗
+            }
             let rp = toReal(p)
             if (!fs.existsSync(rp) || !fs.statSync(rp).isDirectory()) {
                 return sftp.status(id, STATUS_CODE.NO_SUCH_FILE)
@@ -119,7 +141,7 @@ let fakeSftpServer = async(opt = {}) => {
                 return sftp.status(id, STATUS_CODE.EOF) //需回傳EOF告知客戶端已列舉完畢
             }
             hd.hasRead = true
-            let names = fs.readdirSync(hd.rp).map((name) => {
+            let names = fs.readdirSync(hd.rp).sort().map((name) => { //明確排序, 使各平台之列舉與下載順序一致
                 let stat = fs.statSync(path.join(hd.rp, name))
                 let mark = stat.isDirectory() ? 'd' : '-'
                 return {
@@ -136,7 +158,7 @@ let fakeSftpServer = async(opt = {}) => {
                 let fd = fs.openSync(toReal(p), 'r') //唯讀
                 let key = `f${nHandle}`
                 nHandle += 1
-                handles[key] = { type: 'file', fd }
+                handles[key] = { type: 'file', fd, name: path.posix.basename(p) }
                 sftp.handle(id, Buffer.from(key))
             }
             catch (err) {
@@ -148,6 +170,20 @@ let fakeSftpServer = async(opt = {}) => {
             let hd = handles[h.toString()]
             if (!hd || hd.type !== 'file') {
                 return sftp.status(id, STATUS_CODE.FAILURE)
+            }
+            if (fault.stallOn !== null && hd.name === fault.stallOn) {
+                return //模擬下載停滯: 不回應此次讀取, 連線維持
+            }
+            if (fault.breakOn !== null && hd.name === fault.breakOn && offset >= fault.breakAtBytes && (fault.breakTimes > 0 || brokenClients.has(client))) {
+                //模擬下載中途連線中斷, 不回應此次讀取; 稍待使已回應之區塊先送達客戶端, 令本機留下非空之殘檔
+                if (!brokenClients.has(client)) {
+                    brokenClients.add(client)
+                    fault.breakTimes -= 1
+                    setTimeout(() => {
+                        client.end()
+                    }, 30)
+                }
+                return
             }
             let buf = Buffer.alloc(len)
             let nRead = fs.readSync(hd.fd, buf, 0, len, offset)
@@ -172,7 +208,10 @@ let fakeSftpServer = async(opt = {}) => {
     //srv
     let srv = new Server({ hostKeys: [kp.private] }, (client) => {
         client.on('authentication', (ctx) => {
-            if (ctx.method === 'password' && ctx.username === username && ctx.password === password) {
+            if (fault.denyAuth) {
+                ctx.reject() //模擬連線失敗
+            }
+            else if (ctx.method === 'password' && ctx.username === username && ctx.password === password) {
                 ctx.accept()
             }
             else if (ctx.method === 'none') {
@@ -186,7 +225,7 @@ let fakeSftpServer = async(opt = {}) => {
             client.on('session', (accept) => {
                 let session = accept()
                 session.on('sftp', (accept) => {
-                    bindSftp(accept())
+                    bindSftp(accept(), client)
                 })
             })
         })
@@ -205,9 +244,32 @@ let fakeSftpServer = async(opt = {}) => {
         })
     }
 
+    //setFault, 執行期變更故障注入設定, 未給之鍵不變
+    let setFault = (o = {}) => {
+        if ('breakOn' in o) {
+            fault.breakOn = o.breakOn || null
+        }
+        if (Number.isInteger(o.breakAtBytes)) {
+            fault.breakAtBytes = o.breakAtBytes
+        }
+        if ('breakTimes' in o) {
+            fault.breakTimes = Number.isInteger(o.breakTimes) ? o.breakTimes : Infinity
+        }
+        if ('failLs' in o) {
+            fault.failLs = o.failLs === true
+        }
+        if ('denyAuth' in o) {
+            fault.denyAuth = o.denyAuth === true
+        }
+        if ('stallOn' in o) {
+            fault.stallOn = o.stallOn || null
+        }
+    }
+
     return {
         port: srv.address().port,
         close,
+        setFault,
     }
 }
 

@@ -1,16 +1,39 @@
+import path from 'path'
 import get from 'lodash-es/get.js'
 import filter from 'lodash-es/filter.js'
+import size from 'lodash-es/size.js'
 import isfun from 'wsemi/src/isfun.mjs'
+import isestr from 'wsemi/src/isestr.mjs'
+import iseint from 'wsemi/src/iseint.mjs'
+import delay from 'wsemi/src/delay.mjs'
+import getTrace from 'wsemi/src/getTrace.mjs'
 import getErrorMessage from 'wsemi/src/getErrorMessage.mjs'
+import getDiagSecrets from 'wsemi/src/getDiagSecrets.mjs'
+import maskDiagText from 'wsemi/src/maskDiagText.mjs'
+import maskDiagErr from 'wsemi/src/maskDiagErr.mjs'
+import fsIsFile from 'wsemi/src/fsIsFile.mjs'
+import fsDeleteFile from 'wsemi/src/fsDeleteFile.mjs'
 import fsCleanFolder from 'wsemi/src/fsCleanFolder.mjs'
 import fsTreeFolder from 'wsemi/src/fsTreeFolder.mjs'
 import WFtp from 'w-ftp/src/WFtp.mjs'
+import optReader from './_optReader.mjs'
 
 
 /**
- * 由FTP或SFTP下載檔案至本機暫存資料夾fdDwStorageTemp，並回傳所下載之檔案清單
+ * 由FTP或SFTP下載檔案至本機暫存資料夾fdDwStorageTemp，並回傳所下載之檔案清單與下載失敗之檔案清單
  *
  * 下載前會先清空fdDwStorageTemp，僅下載st.fdIni內第1層之檔案，且強制複寫本機數據
+ *
+ * 逐檔下載，各檔由w-ftp(1.0.75以上)先寫入下載暫存區，傳輸完成且本機大小等於遠端大小後才移至fdDwStorageTemp，故fdDwStorageTemp內不會有傳輸中途之殘檔；
+ * 某檔下載失敗(含下載中途連線中斷、逾時)時，先quit斷開連線，再重新連線(以ls驗證連線可用)後重試該檔，最多重試opt.retry次，每次重試前等待opt.retryInterval；
+ * 重試用盡仍失敗之檔不視為整輪失敗，僅不納入files且不留殘檔(fdDwStorageTemp內只會有完整下載之檔案)，其餘檔案照常下載，失敗之檔列於failed與srLog.error
+ *
+ * 下列情形視為整輪失敗，reject並清空fdDwStorageTemp，不回傳空清單當成功：連線建立失敗、列舉檔案(ls)失敗、重新連線失敗(最多嘗試1+retry次)、有檔案須下載而全部皆失敗(reject之錯誤物件另帶failed)、失敗後殘檔無法刪除
+ *
+ * 因失敗之檔不在files內，使用端若以鏡像方式同步(files內沒有即視為已刪除)，須自行處理failed內之檔案(例如沿用前次檔案)，否則失敗之檔會被視為已刪除
+ *
+ * 注意：本版回傳型態由陣列改為物件{ files, failed }；各檔單次下載時限opt.timeFile預設100000ms(SFTP自w-ftp 1.0.75起亦受此時限約束，大檔須自行給較大值)；
+ * FTP伺服器不支援SIZE指令時w-ftp無法核對完整性而拒絕下載，各檔皆會失敗
  *
  * @param {Object} st 輸入設定FTP連線資訊物件
  * @param {String} [st.transportation='FTP'] 輸入傳輸協定字串，可選'FTP'、'SFTP'，預設'FTP'
@@ -19,10 +42,18 @@ import WFtp from 'w-ftp/src/WFtp.mjs'
  * @param {String} [st.username=''] 輸入帳號字串，預設''
  * @param {String} [st.password=''] 輸入密碼字串，預設''
  * @param {String} [st.fdIni='./'] 輸入同步資料夾字串，預設'./'
+ * @param {String} [st.fdDownloadTemp] 輸入w-ftp下載暫存區資料夾字串(w-ftp先寫入暫存檔，傳完才移至目標)，經st原樣轉交WFtp，未給時用w-ftp之預設'./_wftpDownloadTemp'；不得為fdDwStorageTemp或其內(暫存檔會被當成下載成果)，否則reject且不下載
  * @param {String} fdDwStorageTemp 輸入最新下載檔案存放資料夾字串
- * @param {Object} [opt={}] 輸入設定物件，預設{}
+ * @param {Object} [opt={}] 輸入設定物件，預設{}；非預期之輸入視為未給改用預設
  * @param {Object} [opt.srLog=null] 輸入事件紀錄物件，需提供函數info與error，各接收一紀錄物件，未提供時各自以空函數替代不進行紀錄，預設null
- * @returns {Promise} 回傳Promise，resolve回傳列舉檔案陣列，各元素為檔案資訊物件，內含name、path、isFolder等鍵值，reject回傳錯誤訊息
+ * @param {Integer} [opt.retry=2] 輸入各檔下載失敗後最多重試次數之非負整數，0代表不重試，預設2(各檔最多下載1+2次)
+ * @param {Integer} [opt.retryInterval=2000] 輸入重試前等待毫秒數之非負整數，預設2000
+ * @param {Integer} [opt.timeFile=100000] 輸入w-ftp各操作之時限毫秒數之正整數，經WFtp之timeLimit傳給w-ftp，其中下載為每檔自傳輸開始起計(另有查詢遠端檔案資訊、列舉、連線、quit等操作各自計時，非單次嘗試之總和)，逾時視為該次失敗，預設100000(100s)
+ * @param {Integer} [opt.timeRound=0] 輸入整輪逐檔下載之時限毫秒數之非負整數，0代表不限制，預設0；自列舉檔案後起算，逾時後不再下載與重試，尚未下載完成之檔案皆列於failed(尚未開始下載者attempts為0，逾時當下正在重試之檔為已嘗試次數且msg尾帶timeRound exceeded)，整輪可能超過逾時時刻至多一次檔案之嘗試(含quit與重新連線，各操作各自受timeFile約束)
+ * @param {Function} [opt.onTrace=null] 輸入觀察回調函數，供測試與診斷以事件同步，收到凍結之事件物件{ type, ... }，回調之拋錯與rejection皆忽略，預設null；type為'ls'({ num }，須下載之檔案數)、'attempt'({ name, attempt }，開始第attempt次下載)、'done'({ name, attempt }，該檔下載完成)、'fail'({ name, attempt, msg }，該次下載失敗)、'retry'({ name, attempt }，等待retryInterval後即將進行第attempt次下載，即第attempt-1次重試)、'reconnect'({ ok, attempt, msg }，重新連線之各次結果，ok為false時msg為錯誤訊息)、'giveup'({ name, attempts, msg }，該檔重試用盡或整輪逾時而放棄)、'expired'({ num }，整輪逾時而未下載之檔案數)
+ * @param {Boolean} [opt.debug=false] 輸入是否於opt出現非預期輸入時輸出警告布林值，須恰為true才生效，警告為固定詞彙(不含輸入值)，同一鍵同一行程只警告一次，預設false
+ * @param {Function} [opt.funLog=null] 輸入警告之出口函數，格式為(msg, { fn, reason, key })=>{}，僅opt.debug為true時使用，未給則以console.warn輸出，預設null
+ * @returns {Promise} 回傳Promise，resolve回傳物件{ files, failed }，files為完整下載之檔案陣列，各元素為檔案資訊物件，內含name、path、isFolder等鍵值，failed為下載失敗之檔案陣列，各元素為內含name、rpath、attempts、msg之物件(全部成功時為空陣列)；reject回傳錯誤，錯誤訊息已遮罩帳密
  * @example
  *
  * import downloadFiles from './src/downloadFiles.mjs'
@@ -47,11 +78,12 @@ import WFtp from 'w-ftp/src/WFtp.mjs'
  *     },
  * }
  *
- * let vfps = await downloadFiles(st, `./_dwStorageTemp`, opt)
+ * let { files, failed } = await downloadFiles(st, `./_dwStorageTemp`, opt)
  *     .catch((err) => {
  *         console.log(err)
  *     })
- * // console.log('vfps', vfps)
+ * // console.log('files', files)
+ * // console.log('failed', failed)
  * // info { event: 'ftp.conn', msg: 'start...' }
  * // info { event: 'ftp.conn', msg: 'done' }
  * // info { event: 'ftp.ls', length: 2, msg: 'done' }
@@ -61,9 +93,10 @@ import WFtp from 'w-ftp/src/WFtp.mjs'
  */
 let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
     let errTemp = null
+    let isFail = false
 
-    //srLog
-    let srLog = get(opt, 'srLog', null)
+    //srLog, 讀取拋錯(存取器)視為未給
+    let srLog = optReader.readKey(opt, 'srLog')
 
     //srLogInfo
     let srLogInfo = get(srLog, 'info', null)
@@ -87,18 +120,130 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
         srLogError = () => {}
     }
 
+    //rd, opt非預期之輸入視為未給改用預設, opt.debug為true時警告(dspec輸入參數之檢測機制K3)
+    let rd = optReader('downloadFiles', opt)
+
+    //retry, 各檔下載失敗後最多重試次數
+    let retry = Number(rd('retry', 2, (v) => iseint(v, { use: 'count' }), 'a non-negative integer', '2'))
+
+    //retryInterval, 重試前等待毫秒數
+    let retryInterval = Number(rd('retryInterval', 2000, (v) => iseint(v, { use: 'timer' }), 'a non-negative integer of milliseconds', '2000'))
+
+    //timeFile, 各檔單次下載之時限毫秒數, 傳給w-ftp之timeLimit
+    let timeFile = Number(rd('timeFile', 100 * 1000, (v) => iseint(v, { use: 'timer', min: 1 }), 'a positive integer of milliseconds', '100000'))
+
+    //timeRound, 整輪逐檔下載之時限毫秒數, 0代表不限制
+    let timeRound = Number(rd('timeRound', 0, (v) => iseint(v, { use: 'timer' }), 'a non-negative integer of milliseconds', '0'))
+
+    //trace, 觀察回調, 未給時為null, 不組事件物件
+    let trace = getTrace({ onTrace: rd('onTrace', null, isfun, 'a function', 'null') })
+
+    //secrets, 帳密, 外來錯誤文字(後端、驅動之錯誤原文)經遮罩後才輸出(dspec診斷輸出與遮罩D1、D3)
+    let secrets = getDiagSecrets({ username: get(st, 'username'), password: get(st, 'password') })
+
+    //maskLog, 供srLog與onTrace之診斷輸出, 遮罩帳密與單獨帳號
+    let maskLog = (err) => {
+        return maskDiagText(getErrorMessage(err), secrets)
+    }
+
+    //maskOut, 供對外回傳(failed與reject之訊息), 只遮憑證
+    let maskOut = (err) => {
+        return maskDiagText(getErrorMessage(err), secrets.reject)
+    }
+
+    //isInside, fd是否為fdBase或其內
+    let isInside = (fd, fdBase) => {
+        let rel = path.relative(path.resolve(fdBase), path.resolve(fd))
+        return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
+    }
+
+    //check, st.fdDownloadTemp為w-ftp之下載暫存區(經st轉交WFtp, 未給時w-ftp用'./_wftpDownloadTemp'), 不得為fdDwStorageTemp或其內, 否則暫存檔(.part)會被當成下載成果; 必須參數之非預期輸入報錯, 訊息不回顯值
+    let fdDownloadTemp = get(st, 'fdDownloadTemp')
+    if (!isestr(fdDownloadTemp)) {
+        fdDownloadTemp = './_wftpDownloadTemp'
+    }
+    if (isInside(fdDownloadTemp, fdDwStorageTemp)) {
+        throw new Error(`invalid st.fdDownloadTemp: must be outside of fdDwStorageTemp`)
+    }
+
     //core
     let core = async() => {
 
-        //fsCleanFolder
-        fsCleanFolder(fdDwStorageTemp)
+        //fsCleanFolder, 清空失敗(前輪檔案仍在)須視為整輪失敗, 否則前輪檔案會被當成本輪下載成果交出
+        let rClean = fsCleanFolder(fdDwStorageTemp)
+        if (rClean.error) {
+            throw new Error(`can not clean the folder fdDwStorageTemp`)
+        }
 
-        //ftp
-        let ftp = WFtp({
-            ...st,
-            timeLimit: 100 * 1000, //100s
-        })
+        //newFtp
+        let newFtp = () => {
+            return WFtp({
+                ...st,
+                timeLimit: timeFile,
+            })
+        }
+
+        //ftp, 為null代表須重新連線
+        let ftp = newFtp()
         // console.log('ftp', ftp)
+
+        //quitFtp, 重新連線前先quit舊連線, 斷線後quit多半亦會失敗或逾時, 失敗僅紀錄不影響流程
+        let quitFtp = async() => {
+            let ftpOld = ftp
+            ftp = null
+            if (ftpOld === null) {
+                return
+            }
+            await ftpOld.quit()
+                .catch((err) => {
+                    srLogError({ event: 'ftp.reconnect', msg: `quit: ${maskLog(err)}` })
+                })
+        }
+
+        //reconnect, 重新建立連線並以ls驗證連線可用(FTP之conn不實際連線), 連線本身最多嘗試1+retry次, 皆失敗則往上拋(視為整輪失敗)
+        let reconnect = async() => {
+            srLogInfo({ event: 'ftp.reconnect', msg: 'start...' })
+            let errConn = null
+            for (let i = 0; i <= retry; i++) {
+                if (i > 0) {
+                    await delay(retryInterval)
+                }
+                ftp = newFtp()
+                try {
+                    await ftp.conn()
+                    await ftp.ls(st.fdIni)
+                    srLogInfo({ event: 'ftp.reconnect', msg: 'done' })
+                    if (trace) {
+                        trace('reconnect', { ok: true, attempt: i + 1, msg: '' })
+                    }
+                    return
+                }
+                catch (err) {
+                    errConn = err
+                    srLogError({ event: 'ftp.reconnect', attempt: i + 1, msg: maskLog(err) })
+                    if (trace) {
+                        trace('reconnect', { ok: false, attempt: i + 1, msg: maskLog(err) })
+                    }
+                    await quitFtp()
+                }
+            }
+            throw errConn
+        }
+
+        //removeResidue, w-ftp(1.0.75以上)失敗時不會於目標留下殘檔, 此為不依賴其保證之防護: 失敗後須確認該檔不存在, 不可把可能不完整之檔留在資料夾; Windows下刪除中之檔案可能短暫占用故重試, 刪不掉視為整輪失敗
+        let removeResidue = async(fp) => {
+            for (let i = 0; i < 20; i++) {
+                if (!fsIsFile(fp)) {
+                    return
+                }
+                fsDeleteFile(fp)
+                if (!fsIsFile(fp)) {
+                    return
+                }
+                await delay(50)
+            }
+            throw new Error(`can not remove the residue of a failed file`)
+        }
 
         //syncFiles
         let syncFiles = async () => {
@@ -109,24 +254,139 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
             // console.log('ftp.ls', fps[0], fps.length)
             srLogInfo({ event: 'ftp.ls', length: fps.length, msg: 'done' })
 
-            //syncToLocal
-            srLogInfo({ event: 'ftp.syncToLocal', msg: 'start...' })
-            let r = await ftp.syncToLocal(
-                st.fdIni,
-                fdDwStorageTemp,
-                (p) => {
-                    // console.log('ftp.syncToLocal p', p.name, p.progress)
-                    srLogInfo({ event: 'ftp.syncToLocal', name: p.name, progress: p.progress, msg: 'running...' })
-                },
-                {
-                    levelLimit: 1, //僅下載第1層內檔案
-                    forceOverwriteWhenSync: true, //強制全下載進行複寫本機數據
-                },
-            )
-            // console.log('ftp.syncToLocal r', r)
-            srLogInfo({ event: 'ftp.syncToLocal', result: r, msg: 'done' })
+            //items, 僅下載第1層之檔案
+            let fdRemote = isestr(st.fdIni) ? st.fdIni : '.'
+            let items = filter(fps, (v) => {
+                return !v.isFolder && isestr(v.name)
+            })
+            // console.log('items', size(items))
+            if (trace) {
+                trace('ls', { num: size(items) })
+            }
 
+            //syncToLocal, 沿用逐檔進度之事件名稱與訊息(使用端以此濾除進度紀錄)
+            srLogInfo({ event: 'ftp.syncToLocal', msg: 'start...' })
+
+            //cb
+            let cb = (p) => {
+                // console.log('ftp.syncToLocal p', p.name, p.progress)
+                srLogInfo({ event: 'ftp.syncToLocal', name: p.name, progress: p.progress, msg: 'running...' })
+            }
+
+            //tEnd, 整輪逐檔下載之截止時間
+            let tEnd = timeRound > 0 ? Date.now() + timeRound : null
+            let isExpired = () => {
+                return tEnd !== null && Date.now() >= tEnd
+            }
+
+            //downloadOne, 單一檔案之逐次嘗試, 回傳{ ok, attempts, msg }, 重新連線失敗或殘檔刪不掉時往上拋
+            let downloadOne = async(name, rpath) => {
+                let fpLocal = `${fdDwStorageTemp}/${name}`
+                let attempt = 0
+                while (true) {
+                    attempt++
+
+                    //重新連線, 失敗後連線已quit, 須重新連線才能繼續
+                    if (ftp === null) {
+                        await reconnect()
+                    }
+
+                    if (trace) {
+                        trace('attempt', { name, attempt })
+                    }
+
+                    try {
+                        await ftp.download(rpath, fpLocal, cb)
+                        if (trace) {
+                            trace('done', { name, attempt })
+                        }
+                        return { ok: true, attempts: attempt, msg: '', msgLog: '' }
+                    }
+                    catch (err) {
+                        let msgLog = maskLog(err)
+                        srLogError({ event: 'ftp.download', name, attempt, msg: msgLog })
+                        if (trace) {
+                            trace('fail', { name, attempt, msg: msgLog })
+                        }
+
+                        //斷線後連線多半已不可用, 先quit舊連線(終止可能仍在進行之傳輸), 再確認殘檔不存在
+                        await quitFtp()
+                        await removeResidue(fpLocal)
+
+                        //重試用盡
+                        let msgOut = maskOut(err)
+                        if (attempt > retry) {
+                            return { ok: false, attempts: attempt, msg: msgOut, msgLog }
+                        }
+
+                        //整輪逾時, 不再重試
+                        if (isExpired()) {
+                            return { ok: false, attempts: attempt, msg: `${msgOut}, timeRound exceeded`, msgLog: `${msgLog}, timeRound exceeded` }
+                        }
+
+                        await delay(retryInterval)
+                        srLogInfo({ event: 'ftp.download', name, attempt: attempt + 1, msg: 'retry...' })
+                        if (trace) {
+                            trace('retry', { name, attempt: attempt + 1 })
+                        }
+                    }
+                }
+            }
+
+            //逐檔下載, 失敗之檔不阻擋其餘檔案
+            let n = 0
+            let rows = []
+            let failed = []
+            for (let i = 0; i < size(items); i++) {
+                let name = items[i].name
+                let rpath = `${String(fdRemote).replace(/\/+$/, '')}/${name}` //去除資料夾尾端之斜線避免連續斜線
+
+                //整輪逾時, 本檔與其後檔案皆不再下載, 視為失敗
+                if (isExpired()) {
+                    for (let j = i; j < size(items); j++) {
+                        let nameJ = items[j].name
+                        failed.push({ name: nameJ, rpath: `${String(fdRemote).replace(/\/+$/, '')}/${nameJ}`, attempts: 0, msg: `timeRound exceeded` })
+                    }
+                    srLogError({ event: 'ftp.syncToLocal', length: size(items) - i, msg: `timeRound exceeded` })
+                    if (trace) {
+                        trace('expired', { num: size(items) - i })
+                    }
+                    break
+                }
+
+                //downloadOne
+                let r = await downloadOne(name, rpath)
+
+                //save
+                if (r.ok) {
+                    n++
+                    rows.push({ path: rpath, reason: 'no local file' })
+                }
+                else {
+                    failed.push({ name, rpath, attempts: r.attempts, msg: r.msg })
+                    srLogError({ event: 'ftp.download', name, attempts: r.attempts, msg: `give up: ${r.msgLog}` })
+                    if (trace) {
+                        trace('giveup', { name, attempts: r.attempts, msg: r.msgLog })
+                    }
+                }
+
+            }
+
+            //check, 有檔案須下載而全部失敗, 視為整輪失敗, 不交出空清單當成功
+            if (size(items) > 0 && n === 0) {
+                let err = new Error(`all ${size(items)} files failed to download: ${failed[0].msg}`)
+                err.failed = failed
+                throw err
+            }
+
+            // console.log('ftp.syncToLocal r', r)
+            srLogInfo({ event: 'ftp.syncToLocal', result: { num: n, files: rows, failed: failed.map((v) => v.name) }, msg: 'done' })
+
+            return failed
         }
+
+        //failed
+        let failed = []
 
         try {
 
@@ -137,74 +397,98 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
 
             //syncFiles
             srLogInfo({ event: 'syncFiles', msg: 'start...' })
-            await syncFiles()
-                .then(() => {
+            failed = await syncFiles()
+                .then((r) => {
                     srLogInfo({ event: 'syncFiles', msg: 'done' })
+                    return r
                 })
-                .catch((err) => { //須catch, 避免操作指令失敗造成程序中止
+                .catch((err) => { //須catch以紀錄錯誤, 但須再往上拋: 列舉失敗、重新連線失敗或全部檔案皆失敗代表本輪下載不完整或無法使用, 不可當成功交出; 往上拋後經finally執行quit, 再由core外層之catch接住並以reject回傳, 不會造成程序中止
                     // console.log(err)
-                    srLogError({ event: 'syncFiles', msg: getErrorMessage(err) })
+                    srLogError({ event: 'syncFiles', msg: maskLog(err) })
+                    throw err
                 })
 
         }
         finally {
             //quit, 凡conn過即須執行至quit, w-ftp(1.0.17+)之quit會硬關閉socket, 否則FTP停滯時socket殘留致行程無法退出
+            //重新連線失敗或逐檔失敗後ftp為null(已quit), 不再重複quit
 
             //quit, 須catch, quit為收尾清理, 逾時路徑socket已被硬關閉, 失敗不應作廢已下載檔案
-            await ftp.quit()
-                .then((r) => {
-                    // console.log('ftp.quit', r)
-                    srLogInfo({ event: 'ftp.quit', result: r, msg: 'done' })
-                })
-                .catch((err) => {
-                    // console.log(err)
-                    srLogError({ event: 'ftp.quit', msg: getErrorMessage(err) })
-                })
+            if (ftp !== null) {
+                await ftp.quit()
+                    .then((r) => {
+                        // console.log('ftp.quit', r)
+                        srLogInfo({ event: 'ftp.quit', result: r, msg: 'done' })
+                    })
+                    .catch((err) => {
+                        // console.log(err)
+                        srLogError({ event: 'ftp.quit', msg: maskLog(err) })
+                    })
+            }
 
         }
 
+        return failed
     }
 
     //core
+    let failedDw = []
     srLogInfo({ event: 'core', msg: 'start...' })
     await core()
-        .then(() => {
+        .then((r) => {
+            failedDw = r
             srLogInfo({ event: 'core', msg: 'done' })
         })
         .catch((err) => { //須再catch, 避免無法連線SFTP時中止程序
             // console.log(err)
-            srLogError({ event: 'core', msg: getErrorMessage(err) })
+            srLogError({ event: 'core', msg: maskLog(err) })
             errTemp = err
+            isFail = true //以旗標判定, 被以null或undefined reject時亦視為失敗
         })
 
-    //check
-    if (errTemp !== null) {
-        return Promise.reject(errTemp)
+    //cleanTemp, 本輪整輪失敗時清空fdDwStorageTemp, 使殘檔與其餘已下載之檔案皆不留存, 呼叫端即使不處理reject亦不會讀到不完整之下載, 清空失敗僅紀錄不取代原錯誤
+    let cleanTemp = () => {
+        let r = fsCleanFolder(fdDwStorageTemp)
+        if (r.error) {
+            srLogError({ event: 'cleanTemp', msg: maskLog(r.error) })
+        }
     }
 
-    //vfps
-    let vfps = []
+    //reject, 外來錯誤(後端、驅動之錯誤原文)經maskDiagErr遮罩憑證後才往上拋, 無須遮罩者回原物件
+    let reject = (err) => {
+        cleanTemp()
+        return Promise.reject(maskDiagErr(err, secrets))
+    }
+
+    //check
+    if (isFail) {
+        return reject(errTemp)
+    }
+
+    //files
+    let files = []
     try {
         srLogInfo({ event: 'getVfps', msg: 'start...' })
-        vfps = fsTreeFolder(fdDwStorageTemp, 1)
-        vfps = filter(vfps, (v) => {
+        files = fsTreeFolder(fdDwStorageTemp, 1)
+        files = filter(files, (v) => {
             return !v.isFolder //僅使用檔案
         })
-        srLogInfo({ event: 'getVfps', length: vfps.length, msg: 'done' })
+        srLogInfo({ event: 'getVfps', length: files.length, msg: 'done' })
     }
     catch (err) {
         // console.log(err)
-        srLogError({ event: 'getVfps', msg: getErrorMessage(err) })
+        srLogError({ event: 'getVfps', msg: maskLog(err) })
         errTemp = err
+        isFail = true
     }
-    // console.log('vfps', vfps)
+    // console.log('files', files)
 
     //check
-    if (errTemp !== null) {
-        return Promise.reject(errTemp)
+    if (isFail) {
+        return reject(errTemp)
     }
 
-    return vfps
+    return { files, failed: failedDw }
 }
 
 

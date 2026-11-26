@@ -15,7 +15,14 @@ import path from 'path'
  * @param {String} [opt.username='u1'] 輸入允許登入之帳號字串，預設'u1'
  * @param {String} [opt.password='p1'] 輸入允許登入之密碼字串，預設'p1'
  * @param {Integer} [opt.port=0] 輸入監聽port正整數，預設0代表由系統指派可用port
- * @returns {Promise} 回傳Promise，resolve回傳伺服器物件，內含實際監聽port正整數與關閉伺服器函數close
+ * @param {String} [opt.failRetr=null] 輸入下載時令其失敗之檔名字串，伺服器對該檔之RETR回覆425(無法開啟數據連線)，用以模擬連上後下載失敗，預設null代表不失敗
+ * @param {Integer} [opt.failRetrTimes=Infinity] 輸入failRetr最多失敗之次數，用盡後該檔即正常提供，用以模擬重試成功，預設Infinity(每次皆失敗)
+ * @param {String} [opt.failRetrText=''] 輸入failRetr回覆425時附加之文字字串，用以模擬伺服器於錯誤回覆內帶入帳密等外來文字，預設''
+ * @param {String} [opt.truncateRetr=null] 輸入下載時資料連線中途中斷之檔名字串，伺服器對該檔之RETR只送出前一半資料即硬關閉資料連線，控制連線回覆426，重現jsftp於中途關閉時download仍resolve而留下較小檔案之情境，預設null代表不中斷
+ * @param {Integer} [opt.truncateRetrTimes=Infinity] 輸入truncateRetr最多中斷之次數，用盡後該檔即正常提供，預設Infinity(每次皆中斷)
+ * @param {Boolean} [opt.failLs=false] 輸入是否令列舉資料夾(STAT資料夾)失敗之布林值，用以模擬ls失敗，預設false
+ * @param {String} [opt.failLsText=''] 輸入failLs回覆550時附加之文字字串，用以模擬伺服器於錯誤回覆內帶入帳密等外來文字，預設''
+ * @returns {Promise} 回傳Promise，resolve回傳伺服器物件，內含實際監聽port正整數、關閉伺服器函數close與執行期變更故障設定之函數setFault(物件，鍵同failRetr、failRetrTimes、failLs，未給之鍵不變)
  */
 let fakeFtpServer = async (opt = {}) => {
 
@@ -33,6 +40,17 @@ let fakeFtpServer = async (opt = {}) => {
 
     //port, 0代表由系統指派可用port, 供mocha平行測試時避免衝突
     let port = opt.port || 0
+
+    //fault, 故障注入設定, 預設全不啟用, 可由setFault於執行期變更, 供模擬連上後下載失敗與ls失敗
+    let fault = {
+        failRetr: opt.failRetr || null,
+        failRetrTimes: Number.isInteger(opt.failRetrTimes) ? opt.failRetrTimes : Infinity,
+        failRetrText: typeof opt.failRetrText === 'string' ? opt.failRetrText : '',
+        truncateRetr: opt.truncateRetr || null,
+        truncateRetrTimes: Number.isInteger(opt.truncateRetrTimes) ? opt.truncateRetrTimes : Infinity,
+        failLs: opt.failLs === true,
+        failLsText: typeof opt.failLsText === 'string' ? opt.failLsText : '',
+    }
 
     //sockets, 記錄所有控制與數據socket, 供close時強制銷毀
     let sockets = new Set()
@@ -136,6 +154,10 @@ let fakeFtpServer = async (opt = {}) => {
             let st = fs.statSync(rp)
             let lines
             if (st.isDirectory()) {
+                if (fault.failLs) {
+                    socket.write(`550 permission denied${fault.failLsText}\r\n`) //模擬ls失敗
+                    return
+                }
                 lines = lsLines(rp)
             }
             else {
@@ -190,8 +212,29 @@ let fakeFtpServer = async (opt = {}) => {
                 socket.write('550 no such file\r\n')
                 return
             }
+            if (fault.failRetr !== null && path.basename(rp) === fault.failRetr && fault.failRetrTimes > 0) {
+                fault.failRetrTimes -= 1
+                closeDsrv(state)
+                socket.write(`425 can not open data connection${fault.failRetrText}\r\n`) //模擬連上後下載失敗
+                return
+            }
             socket.write('150 opening data connection\r\n')
             let ds = await waitDs(state)
+            if (fault.truncateRetr !== null && path.basename(rp) === fault.truncateRetr && fault.truncateRetrTimes > 0) {
+                //模擬資料連線中途中斷: 只送前一半後硬關閉資料連線, 控制連線回426
+                fault.truncateRetrTimes -= 1
+                ds.once('close', () => {
+                    socket.write('426 connection closed; transfer aborted\r\n')
+                    closeDsrv(state)
+                })
+                let buf = fs.readFileSync(rp)
+                ds.write(buf.subarray(0, Math.floor(buf.length / 2)), () => {
+                    setTimeout(() => {
+                        ds.destroy()
+                    }, 20)
+                })
+                return
+            }
             ds.once('close', () => {
                 socket.write('226 transfer complete\r\n') //數據socket關閉後須回最終回應, 完成jsftp之指令佇列
                 closeDsrv(state)
@@ -265,9 +308,29 @@ let fakeFtpServer = async (opt = {}) => {
         })
     }
 
+    //setFault, 執行期變更故障注入設定, 未給之鍵不變
+    let setFault = (o = {}) => {
+        if ('failRetr' in o) {
+            fault.failRetr = o.failRetr || null
+        }
+        if ('failRetrTimes' in o) {
+            fault.failRetrTimes = Number.isInteger(o.failRetrTimes) ? o.failRetrTimes : Infinity
+        }
+        if ('truncateRetr' in o) {
+            fault.truncateRetr = o.truncateRetr || null
+        }
+        if ('truncateRetrTimes' in o) {
+            fault.truncateRetrTimes = Number.isInteger(o.truncateRetrTimes) ? o.truncateRetrTimes : Infinity
+        }
+        if ('failLs' in o) {
+            fault.failLs = o.failLs === true
+        }
+    }
+
     return {
         port: srv.address().port,
         close,
+        setFault,
     }
 }
 

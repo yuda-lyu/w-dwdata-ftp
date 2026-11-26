@@ -37,6 +37,7 @@ describe('once', function() {
             username: 'u1',
             password: 'p1',
             fdIni: '.',
+            fdDownloadTemp: `./${tag}_wftpTemp`, //w-ftp之下載暫存區, 不得位於fdDwStorageTemp內
         }
 
         //fdDwStorageTemp
@@ -110,6 +111,7 @@ describe('once', function() {
             await srv.close()
 
             w.fsDeleteFolder(fdSrv)
+            w.fsDeleteFolder(st.fdDownloadTemp)
             w.fsDeleteFolder(fdTagRemove)
             w.fsDeleteFolder(fdDwStorageTemp)
             w.fsDeleteFolder(fdDwStorage)
