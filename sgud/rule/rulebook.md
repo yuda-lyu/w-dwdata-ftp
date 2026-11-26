@@ -36,3 +36,14 @@
 - 主階段逐項處理遇錯即停(壞檔使其後各檔每輪被略過):屬 w-data-scheduler。
 - builder 之 `fdDwAttime → fdDwCurrent` 無條件同步:屬 w-dwdata-builder;`WDwdataFtp` 預設比對基準為 `fdDwStorage`,不受影響,使用端若自給以 `fdDwCurrent` 為基準之 `funGetCurrent` 須自行留意。
 - 以鏡像方式同步 `downloadFiles` 結果之使用端(清單內沒有即刪除):須自行處理 `failed` 內之檔案(例如沿用前次檔案),否則失敗之檔會被視為已刪除。
+
+## 4. wsemi 列舉函數之用法(`fsTreeFolder`、`fsTreeFolderWithHash` 等)
+
+> 需求出處:wsemi 1.9.80 起列舉函數之第 2 參數由 `levelLimit`(舊預設 1 層)改為 `opt = {}`,`opt.levelLimit` 為有效正整數才限層,**未給即窮舉全部層級**;給了而非物件(含舊寫法之數字)拋 `invalid opt: must be an object`;Gitea #220。
+> 盤點指令(每處須為 `{ levelLimit: n }` 或表意窮舉之省略,不得為數字):`git grep -nE "\b(fsTreeFolder|fsTreeFolderWithHash|fsGetFilesInFolder|fsGetFilesWithHashInFolder|fsGetFoldersInFolder)(Core)?\s*\(" -- . ':!dist' ':!docs'`
+
+| 條號 | 規則 | 判準 / 對應測試(`test/unit-downloadFail.test.mjs`) | 狀態 |
+|---|---|---|---|
+| R-WS-01 | 本套件 `src` 之 3 處列舉皆僅限第 1 層,寫為 `{ levelLimit: 1 }`,**不得省略第 2 參數**(省略即窮舉)、**不得傳數字**:`src/downloadFiles.mjs`(結束時收 `fdDwStorageTemp` 之檔案)、`src/WDwdataFtp.mjs`(失敗檔沿用前次檔案後取 `fdDwStorageTemp` 之檔案;`treeFolderAndGetFilesHash` 取比對基準之 hash,同時給 `type`、`forFile`、`forFolder` 於同一物件) | 盤點指令見本節表上方;測試各一案,於列舉前一刻(事件同步)或比對前於資料夾內建立子資料夾與第 2 層檔案 `ghost.txt`:「downloadFiles(SFTP): 結束時只收fdDwStorageTemp第1層之檔案」「WDwdataFtp(SFTP, 全量模式): 失敗檔沿用前次檔案後, 僅以fdDwStorageTemp第1層之檔案計算hash」「WDwdataFtp(SFTP, 全量/增量模式): 比對基準…只含第1層之項目」(與僅有空子資料夾之對照組比對結果相同);各站點改為省略或 `levelLimit: 2` 之變異皆使對應案轉紅 | 已做 |
+| R-WS-02 | 測試內之列舉(`digestFolder`、`digestResult`、`partsLeft`、`fdDwStorageTemp` 之全層級列舉等)同用 `{ levelLimit: n }`;全層級列舉以 `{ levelLimit: 5 }` 表達(夾具深度不超過 2 層) | 同上盤點指令 | 已做 |
+| R-WS-03 | 依賴 `wsemi` ≥ 1.9.80、`w-ftp` ≥ 1.0.76(w-ftp 1.0.76 起其內部列舉已改用新簽章) | `package.json` 之版本範圍 | 已做 |

@@ -19,6 +19,7 @@ import fakeFtpServer from './lib/fakeFtpServer.mjs'
 //5. WDwdataFtp全量模式下, 失敗之檔須沿用fdDwStorage內前次檔案視為未變更, 不得被當成已刪除而連動刪除fdDwStorage與fdResult內之數據; 整輪失敗時須取消該輪
 //6. WDwdataFtp主階段(funAdd、funModify、funRemove)處理失敗、被略過或被取消時, 未處理成功之檔不搬入fdDwStorage(刪除未處理成功者不自fdDwStorage移除), 下輪補處理; 已處理成功者照常搬入
 //7. opt.onTrace(觀察回調)於各事件同步呼叫, 回調之拋錯與rejection不影響結果; opt.debug為true時非預期之opt輸入警告(固定詞彙、不含輸入值); 外來錯誤文字遮罩帳密
+//8. 列舉資料夾之wsemi函數(fsTreeFolder、fsTreeFolderWithHash)第2參數為opt, 本套件之3處列舉(downloadFiles結束時收檔、WDwdataFtp沿用前次檔案後取檔、WDwdataFtp取fdDwStorage之hash清單)皆僅限第1層(opt.levelLimit為1), 子資料夾內之檔案不列入
 describe('downloadFail', function() {
 
     //names, 假伺服器第1層3個檔案, 依檔名排序下載: a1.txt、a2.bin(故障檔, 下載中途失敗)、a3.txt(故障檔之後之檔案)
@@ -62,7 +63,7 @@ describe('downloadFail', function() {
     //digestFolder, 取得資料夾第1層檔案之名稱與內容雜湊
     let digestFolder = (fd) => {
         let kp = {}
-        w.fsTreeFolder(fd, 1).forEach((v) => {
+        w.fsTreeFolder(fd, { levelLimit: 1 }).forEach((v) => {
             if (!v.isFolder) {
                 kp[v.name] = md5(fs.readFileSync(v.path))
             }
@@ -73,7 +74,7 @@ describe('downloadFail', function() {
     //digestResult, fdResult內各檔(在{id}/{id}之內)之內容雜湊
     let digestResult = (fd) => {
         let kp = {}
-        w.fsTreeFolder(fd, 1).forEach((v) => {
+        w.fsTreeFolder(fd, { levelLimit: 1 }).forEach((v) => {
             if (v.isFolder) {
                 kp[v.name] = md5(fs.readFileSync(`${v.path}/${v.name}`))
             }
@@ -224,7 +225,7 @@ describe('downloadFail', function() {
         r.trace = trace
 
         //folder, 結束後fdDwStorageTemp內所有層級之檔案與資料夾
-        r.folder = w.fsTreeFolder(env.fds.fdDwStorageTemp, 5).map((v) => v.name).sort()
+        r.folder = w.fsTreeFolder(env.fds.fdDwStorageTemp, { levelLimit: 5 }).map((v) => v.name).sort()
 
         return r
     }
@@ -515,7 +516,7 @@ describe('downloadFail', function() {
                 folder: r.folder,
                 failed: _.map(r.failed, (v) => _.pick(v, ['name', 'attempts'])),
                 content: digestFolder(env.fds.fdDwStorageTemp),
-                partsLeft: w.fsTreeFolder(env.fds.fdWtemp, 1).length, //w-ftp之暫存區不得殘留暫存檔
+                partsLeft: w.fsTreeFolder(env.fds.fdWtemp, { levelLimit: 1 }).length, //w-ftp之暫存區不得殘留暫存檔
             }, {
                 names: ['a1.txt', 'a3.txt'],
                 folder: ['a1.txt', 'a3.txt'],
@@ -566,7 +567,7 @@ describe('downloadFail', function() {
                     })
             }
             assert.strict.deepEqual(msgs, _.times(3, () => 'invalid st.fdDownloadTemp: must be outside of fdDwStorageTemp'))
-            assert.strict.deepEqual(w.fsTreeFolder(env.fds.fdDwStorageTemp, 5).length, 0) //未下載
+            assert.strict.deepEqual(w.fsTreeFolder(env.fds.fdDwStorageTemp, { levelLimit: 5 }).length, 0) //未下載
 
             //位於其外(兄弟資料夾名稱僅前綴相同者亦屬其外)
             let r = await dw(env, { }, null)
@@ -597,7 +598,7 @@ describe('downloadFail', function() {
                 .catch((err) => {
                     msg = w.getErrorMessage(err)
                 })
-            assert.strict.deepEqual({ msg, names: w.fsTreeFolder(fdDef, 1).map((v) => v.name).sort() }, { msg: 'invalid st.fdDownloadTemp: must be outside of fdDwStorageTemp', names: ['_sentinel_dtd.txt'] })
+            assert.strict.deepEqual({ msg, names: w.fsTreeFolder(fdDef, { levelLimit: 1 }).map((v) => v.name).sort() }, { msg: 'invalid st.fdDownloadTemp: must be outside of fdDwStorageTemp', names: ['_sentinel_dtd.txt'] })
         }
         finally {
             if (fs.existsSync(fpSentinel)) {
@@ -646,7 +647,7 @@ describe('downloadFail', function() {
                 folder: r.folder,
                 failed: _.map(r.failed, (v) => _.pick(v, ['name', 'attempts'])),
                 timeout: /timeout/.test(_.get(r.failed, [0, 'msg'], '')),
-                partsLeft: w.fsTreeFolder(env.fds.fdWtemp, 1).length,
+                partsLeft: w.fsTreeFolder(env.fds.fdWtemp, { levelLimit: 1 }).length,
             }, {
                 names: ['a1.txt', 'a3.txt'],
                 folder: ['a1.txt', 'a3.txt'],
@@ -1633,6 +1634,138 @@ describe('downloadFail', function() {
             finally {
                 await env.clean()
             }
+        })
+
+    })
+
+    //規格8: 列舉僅限第1層(wsemi列舉函數opt.levelLimit為1, 未給則窮舉全部層級), 以下3案各對應src之一處列舉, 於列舉前一刻(事件同步, 不以延時)或比對前於資料夾內建立子資料夾與檔案(ghost.txt), 其不得被列入
+
+    //injectStray, 於fd內建立子資料夾與其內檔案(第2層之檔案)
+    let injectStray = (fd) => {
+        w.fsCreateFolder(`${fd}/stray`)
+        fs.writeFileSync(`${fd}/stray/ghost.txt`, 'ghost', 'utf8')
+    }
+
+    it('downloadFiles(SFTP): 結束時只收fdDwStorageTemp第1層之檔案, 其子資料夾內之檔案不列入files(downloadFiles列舉僅限第1層)', async () => {
+        let env = await setup('lv_dl', 'SFTP')
+        try {
+
+            //於getVfps開始時(列舉前一刻)同步建立子資料夾與檔案
+            let nInject = 0
+            let srLog = {
+                info: (v) => {
+                    if (v.event === 'getVfps' && v.msg === 'start...') {
+                        nInject++
+                        injectStray(env.fds.fdDwStorageTemp)
+                    }
+                },
+                error: () => {},
+            }
+            let r = await dw(env, { srLog })
+            assert.strict.deepEqual({
+                nInject,
+                settled: r.settled,
+                names: r.names, //spec 8: 僅第1層之檔案
+                failed: r.failed,
+                folder: r.folder, //全層級列舉, 證明注入之子資料夾與檔案確實存在於fdDwStorageTemp
+            }, {
+                nInject: 1,
+                settled: 'resolved',
+                names: ['a1.txt', 'a2.bin', 'a3.txt'],
+                failed: [],
+                folder: ['a1.txt', 'a2.bin', 'a3.txt', 'ghost.txt', 'stray'],
+            })
+        }
+        finally {
+            await env.clean()
+        }
+    })
+
+    it('WDwdataFtp(SFTP, 全量模式): 失敗檔沿用前次檔案後, 僅以fdDwStorageTemp第1層之檔案計算hash, 其子資料夾內之檔案不被視為新增', async () => {
+        let env = await setup('lv_keep', 'SFTP')
+        try {
+            let optExtra = { useExpandOnOldFiles: false }
+
+            //第1輪: 正常, 3個檔案皆新增
+            let round1 = await runRound(env, optExtra)
+            assert.strict.deepEqual(getCmp(round1.ms), { numRemove: 0, numAdd: 3, numModify: 0, numSame: 0 })
+
+            //第2輪: a2.bin一直失敗而沿用前次檔案, 於沿用完成當下(keep-previous-file, 早於取fdDwStorageTemp第1層之檔案)同步建立子資料夾與檔案
+            env.srv.setFault(kpProt.SFTP.faultAlways)
+            let nInject = 0
+            let round2 = await runRound(env, optExtra, (v) => {
+                if (v.event === 'keep-previous-file') {
+                    nInject++
+                    injectStray(env.fds.fdDwStorageTemp)
+                }
+            })
+            assert.strict.deepEqual({
+                nInject,
+                errors: round2.ms.filter((m) => m.type === 'error').length,
+                cmp: getCmp(round2.ms), //spec 8: 無新增(ghost.txt不得被列入)
+                mutating: round2.ms.filter(isMutating).map((m) => `${m.event}:${m.id}:${m.msg}`).sort(),
+                storage: digestFolder(env.fds.fdDwStorage),
+            }, {
+                nInject: 1,
+                errors: 0,
+                cmp: { numRemove: 0, numAdd: 0, numModify: 0, numSame: 3 },
+                mutating: [],
+                storage: digestsOf(contents),
+            })
+        }
+        finally {
+            await env.clean()
+        }
+    })
+
+    _.each([false, true], (useExpandOnOldFiles) => {
+
+        let mode = useExpandOnOldFiles ? '增量模式' : '全量模式'
+
+        it(`WDwdataFtp(SFTP, ${mode}): 比對基準(fdDwStorage之hash清單)只含第1層之項目, fdDwStorage內子資料夾之檔案不被視為既有數據(與僅有空子資料夾之對照組比對結果相同)`, async () => {
+            let optExtra = { useExpandOnOldFiles }
+            let key = useExpandOnOldFiles ? 'exp' : 'full'
+
+            //round2Of, 第1輪正常(3個檔案皆新增), 第2輪伺服器無變動但fdDwStorage內多了子資料夾stray(withGhost為true時其內另有檔案ghost.txt, 即第2層之檔案), 回傳第2輪之結果
+            //對照組(withGhost為false, 僅空之子資料夾)與實驗組之比對結果須相同: 差別只在第2層之檔案, 不依賴第1層之子資料夾項目本身如何處理
+            let round2Of = async(tag, withGhost) => {
+                let env = await setup(`lv_hash_${key}_${tag}`, 'SFTP')
+                try {
+                    let round1 = await runRound(env, optExtra)
+                    assert.strict.deepEqual(getCmp(round1.ms), { numRemove: 0, numAdd: 3, numModify: 0, numSame: 0 })
+                    if (withGhost) {
+                        injectStray(env.fds.fdDwStorage)
+                    }
+                    else {
+                        w.fsCreateFolder(`${env.fds.fdDwStorage}/stray`)
+                    }
+                    assert.strict.deepEqual(fs.existsSync(`${env.fds.fdDwStorage}/stray/ghost.txt`), withGhost)
+                    let round2 = await runRound(env, optExtra)
+                    return {
+                        errors: round2.ms.filter((m) => m.type === 'error').length,
+                        cmp: getCmp(round2.ms),
+                        mutating: round2.ms.filter(isMutating).map((m) => `${m.event}:${m.id}:${m.msg}`).sort(),
+                        storage: digestFolder(env.fds.fdDwStorage),
+                    }
+                }
+                finally {
+                    await env.clean()
+                }
+            }
+            let rCtl = await round2Of('ctl', false)
+            let rGhost = await round2Of('ghost', true)
+
+            //spec 8: ghost.txt(第2層)不得被列入比對基準(全量模式不得被當成已刪除而有移除事件, 增量模式不得被當成既有檔案而使same數增加)
+            assert.strict.deepEqual(rGhost, rCtl)
+            assert.strict.deepEqual({
+                errors: rGhost.errors,
+                noGhost: rGhost.mutating.filter((s) => /ghost\.txt/.test(s)),
+                storage: rGhost.storage,
+            }, {
+                errors: 0,
+                noGhost: [],
+                storage: digestsOf(contents),
+            })
         })
 
     })

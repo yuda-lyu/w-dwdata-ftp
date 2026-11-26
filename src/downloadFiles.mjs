@@ -469,7 +469,7 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
     let files = []
     try {
         srLogInfo({ event: 'getVfps', msg: 'start...' })
-        files = fsTreeFolder(fdDwStorageTemp, 1)
+        files = fsTreeFolder(fdDwStorageTemp, { levelLimit: 1 })
         files = filter(files, (v) => {
             return !v.isFolder //僅使用檔案
         })

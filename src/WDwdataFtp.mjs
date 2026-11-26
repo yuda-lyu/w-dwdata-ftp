@@ -305,7 +305,7 @@ let WDwdataFtp = async(st, opt = {}) => {
     let treeFolderAndGetFilesHash = async (fd) => {
 
         //vfps
-        let vfps = await fsTreeFolderWithHash(fd, 1, { type: 'md5', forFile: true, forFolder: false })
+        let vfps = await fsTreeFolderWithHash(fd, { levelLimit: 1, type: 'md5', forFile: true, forFolder: false })
 
         //ltdtHash
         let ltdtHash = map(vfps, (v) => {
@@ -382,7 +382,7 @@ let WDwdataFtp = async(st, opt = {}) => {
                     srLogInfo({ event: 'keep-previous-file', name: v.name, msg: 'done' })
                 }
             })
-            vfps = filter(fsTreeFolder(fdDwStorageTemp, 1), (v) => {
+            vfps = filter(fsTreeFolder(fdDwStorageTemp, { levelLimit: 1 }), (v) => {
                 return !v.isFolder //僅使用檔案
             })
         }

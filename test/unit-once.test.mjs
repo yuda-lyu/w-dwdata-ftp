@@ -104,7 +104,7 @@ describe('once', function() {
 
             //cts, 下載後所連動生成數據之實際內容
             let cts = {}
-            w.fsTreeFolder(fdResult, 1).forEach((v) => {
+            w.fsTreeFolder(fdResult, { levelLimit: 1 }).forEach((v) => {
                 cts[v.name] = fs.readFileSync(`${v.path}/${v.name}`, 'utf8')
             })
 
