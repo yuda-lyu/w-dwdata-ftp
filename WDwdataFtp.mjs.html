@@ -83,11 +83,11 @@ import downloadFiles from './downloadFiles.mjs'
  *
  * 執行階段最新hash數據放置於fdDwAttime，前次hash數據會於結束前自動備份至fdDwCurrent
  *
- * 執行階段最新數據放置於fdDwStorageTemp，前次數據放置於fdDwStorage，於結束前會將fdDwStorageTemp內已處理之檔案搬入fdDwStorage(全量模式為鏡像同步，增量模式為複製)，再清空fdDwStorageTemp
+ * 執行階段最新數據放置於fdDwStorageTemp，前次數據放置於fdDwStorage，下載完成之輪於結束前會將fdDwStorageTemp內未變更與已處理成功之檔案搬入fdDwStorage(全量模式為鏡像同步，增量模式為複製)，再清空fdDwStorageTemp；本輪取消(結果之msgCancel有值，例如取得既有數據或比對階段錯誤、'no difference')時不搬移，fdDwStorage維持前次內容，僅清空fdDwStorageTemp
  *
  * 下載階段：逐檔下載，某檔失敗時重新連線後重試(opt.retry)，重試用盡之檔不視為整輪失敗，僅不納入本輪新下載檔案(全量模式沿用fdDwStorage內前次檔案，視為未變更，不會被當成已刪除)；連線、ls失敗或全部檔案皆失敗則取消該輪，詳見downloadFiles
  *
- * 主階段(funAdd、funModify、funRemove)處理失敗、被略過或主階段被取消時，未處理成功之新增/變更檔不會搬入fdDwStorage，刪除失敗或未處理之檔不會自fdDwStorage移除，下輪比對仍有差異而再處理，故為至少一次語意，funAdd、funModify、funRemove須可重複執行
+ * 主階段(funAdd、funModify、funRemove)逐項處理，某項拋錯或reject不中止本輪，其餘項照常處理(w-data-scheduler 1.0.77起)。是否處理成功以排程器交來之本輪結果success為準(與w-dwdata-builder更新fdDwCurrent一致)：未列於success之新增/變更檔不會搬入fdDwStorage，未列於success之刪除檔不會自fdDwStorage移除，含處理失敗者，以及函數成功而其後排程器之任務狀態更新失敗者(列於failed，msg為'failed to update task state')；下輪比對仍有差異而再處理，故為至少一次語意，funAdd、funModify、funRemove須可重複執行
  *
  * @param {String} st 輸入設定FTP連線資訊物件
  * @param {String} [st.transportation='FTP'] 輸入傳輸協定字串，可選'FTP'、'SFTP'，預設'FTP'
@@ -113,7 +113,7 @@ import downloadFiles from './downloadFiles.mjs'
  * @param {Function} [opt.funModify=null] 輸入當有資料需更新時，需要連動處理之函數，預設null
  * @param {Function} [opt.funRemove=null] 輸入當有資料需刪除時，需要連動處理之函數，預設null
  * @param {Function} [opt.funAfterStart=null] 輸入偵測程序剛開始啟動時，需要處理之函數，預設null
- * @param {Function} [opt.funBeforeEnd=null] 輸入偵測程序要結束前，需要處理之函數，預設null
+ * @param {Function} [opt.funBeforeEnd=null] 輸入偵測程序要結束前，需要處理之函數，不論前面各階段有無錯誤皆呼叫(w-dwdata-builder更新fdDwCurrent失敗時除外)，呼叫時fdDwStorage之搬移已執行完畢(本輪取消時不搬移；搬移失敗僅記錄於srLog.error之move-files-to-storage)，接收本輪結果物件{ success: { add, modify, remove }, failed, msgCancel }(由w-data-scheduler產生，經w-dwdata-builder轉交)：success各陣列為處理成功之id(檔名)，failed各項為{ id, mode, event, msg }，msgCancel為本輪取消訊息(例如下載或比對階段錯誤、'no difference')，否則為空字串；可為async函數，預設null
  * @param {Integer} [opt.retry=2] 輸入各檔下載失敗後最多重試次數之非負整數，每次重試前會先重新連線，0代表不重試，預設2，詳見downloadFiles
  * @param {Integer} [opt.retryInterval=2000] 輸入重試前等待毫秒數之非負整數，預設2000，詳見downloadFiles
  * @param {Integer} [opt.timeFile=100000] 輸入各檔單次下載之時限毫秒數之正整數，SFTP自w-ftp 1.0.75起亦受此時限約束，大檔須自行給較大值，預設100000，詳見downloadFiles
@@ -122,9 +122,9 @@ import downloadFiles from './downloadFiles.mjs'
  * @param {Boolean} [opt.debug=false] 輸入是否於opt出現非預期輸入時輸出警告布林值，須恰為true才生效，警告為固定詞彙(不含輸入值)，同一鍵同一行程只警告一次，並轉交downloadFiles，預設false
  * @param {Function} [opt.funLog=null] 輸入警告之出口函數，格式為(msg, { fn, reason, key })=>{}，其中fn為警告來源之標籤'w-dwdata-ftp WDwdataFtp'(轉交給downloadFiles之鍵由其警告，標籤為'w-dwdata-ftp downloadFiles')，僅opt.debug為true時使用，未給則以console.warn輸出，預設null
  * @param {Number} [opt.timeToleranceRemove=0] 輸入刪除任務之防抖時長，單位ms，預設0，代表不使用
- * @param {Object} [opt.srLog=null] 輸入事件紀錄物件，需提供函數info、warn與error，各接收一紀錄物件，供下載FTP檔案與偵測數據變更時紀錄各階段事件，未提供時不進行紀錄，其中warn目前保留未使用，預設null
+ * @param {Object} [opt.srLog=null] 輸入事件紀錄物件，需提供函數info、warn與error，各接收一紀錄物件，供下載FTP檔案與偵測數據變更時紀錄各階段事件，未提供時不進行紀錄，其中warn用於本輪有逐項處理失敗項(事件fail-items-stage-main)與成功項找不到數據檔(事件move-data-to-current)時之紀錄，預設null
  * @param {Boolean} [opt.useShowLog=true] 輸入是否於偵測數據變更過程將錯誤與取消訊息輸出至console布林值，下載FTP檔案階段本身不輸出至console，惟其錯誤往上拋出後仍受此設定影響，預設true
- * @returns {Object} 回傳事件物件，可呼叫函數on監聽change事件
+ * @returns {Object} 回傳事件物件，可呼叫函數on監聽change與end事件，end事件之監聽函數接收本輪結果物件(內容同opt.funBeforeEnd所接收者)
  * @example
  *
  * import w from 'wsemi'
@@ -575,25 +575,8 @@ let WDwdataFtp = async(st, opt = {}) => {
         return r
     }
 
-    //idsAddOk, idsRemoveOk, 本輪主階段已處理成功(funAdd、funModify、funRemove回傳而未拋錯)之檔案id
-    let idsAddOk = new Set()
-    let idsRemoveOk = new Set()
-    let wrapOk = (fun, ids) => {
-        return async(v) => {
-            let r = fun(v)
-            if (ispm(r)) {
-                r = await r
-            }
-            ids.add(v.id)
-            return r
-        }
-    }
-    funAdd = wrapOk(funAdd, idsAddOk)
-    funModify = wrapOk(funModify, idsAddOk)
-    funRemove = wrapOk(funRemove, idsRemoveOk)
-
-    //funBeforeEndNec
-    let funBeforeEndNec = async() => {
+    //funBeforeEndNec, 依排程器交來之本輪結果res搬移fdDwStorageTemp內檔案至fdDwStorage
+    let funBeforeEndNec = async(res) => {
 
         try {
             srLogInfo({ event: 'move-files-to-storage', msg: 'start...' })
@@ -603,17 +586,25 @@ let WDwdataFtp = async(st, opt = {}) => {
                 throw new Error(`no files`)
             }
 
-            //kpHashBase, 比對基準之檔案hash, 主階段於取得既有數據前即被取消(funGetCurrent未完成)時, 改取fdDwStorage內檔案之hash
-            let kpHashBase = kpHashCur
-            if (kpHashBase === null) {
-                kpHashBase = cvLtdtToKp(await treeFolderAndGetFilesHash(fdDwStorage))
+            //check, 本輪取消(msgCancel有值, 例如取得既有數據或比對錯誤、'no difference')時不搬移, fdDwStorage維持前次內容(同w-dwdata-builder之fdDwCurrent)
+            if (get(res, 'msgCancel') !== '') {
+                fsCleanFolder(fdDwStorageTemp)
+                srLogInfo({ event: 'move-files-to-storage', msg: 'round canceled, files are not moved' })
+                return
             }
 
-            //idsPending, 新增或變更(與比對基準之hash不同)而主階段未處理成功(處理失敗、被略過或主階段被取消)之檔案id,
+            //idsAddOk, idsRemoveOk, 本輪結果列為處理成功之新增/變更與刪除之檔案id, 未列於success者一律視為未處理成功(含函數成功而其後排程器任務狀態更新失敗者)
+            let idsAddOk = new Set([...res.success.add, ...res.success.modify])
+            let idsRemoveOk = new Set(res.success.remove)
+
+            //idsAddFail, 本輪結果列為處理失敗之新增/變更檔案id, 自給funGetCurrent之項帶hash以外之欄位時, 排程器亦將hash相同者判為變更, 故不能僅以hash判斷
+            let idsAddFail = new Set(res.failed.filter((v) => v.mode !== 'remove').map((v) => v.id))
+
+            //idsPending, 新增或變更(與比對基準之hash不同, 或列於failed)而未處理成功之檔案id,
             //不得搬入fdDwStorage, 否則下輪比對為無差異而永遠不再處理
             let idsPending = new Set()
             each(kpHashNew, (hash, id) => {
-                let isChanged = !hasId(kpHashBase, id) || kpHashBase[id] !== hash
+                let isChanged = !hasId(kpHashCur, id) || kpHashCur[id] !== hash || idsAddFail.has(id)
                 if (isChanged &amp;&amp; !idsAddOk.has(id)) {
                     idsPending.add(id)
                 }
@@ -622,7 +613,7 @@ let WDwdataFtp = async(st, opt = {}) => {
             //idsPendingRemove, 全量模式下比對基準有而本輪下載無(將被鏡像刪除)且刪除任務未處理成功之檔案id, 須保留於fdDwStorage使下輪再處理刪除
             let idsPendingRemove = new Set()
             if (!useExpandOnOldFiles) {
-                each(kpHashBase, (hash, id) => {
+                each(kpHashCur, (hash, id) => {
                     if (!hasId(kpHashNew, id) &amp;&amp; !idsRemoveOk.has(id)) {
                         idsPendingRemove.add(id)
                     }
@@ -710,12 +701,12 @@ let WDwdataFtp = async(st, opt = {}) => {
 
     }
 
-    let funBeforeEnd = async() => {
+    let funBeforeEnd = async(res) => {
 
-        await funBeforeEndNec()
+        await funBeforeEndNec(res)
 
         if (isfun(funBeforeEndCall)) {
-            let r = funBeforeEndCall()
+            let r = funBeforeEndCall(res) //res為w-dwdata-builder交來之本輪結果{ success, failed, msgCancel }, 原樣轉傳
             if (ispm(r)) {
                 r = await r
             }
@@ -761,7 +752,7 @@ export default WDwdataFtp
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Sat Nov 28 2026 17:31:27 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Sat Nov 28 2026 21:14:20 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>
