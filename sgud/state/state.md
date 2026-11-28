@@ -15,14 +15,15 @@
 | `onTrace` 觀察回調 | R-DL-10 | 已做(`ls`、`attempt`、`done`、`fail`、`retry`、`reconnect`、`giveup`、`expired`) | 同上 |
 | 外來錯誤文字遮罩 | R-DL-11 | 已做;`WDwdataFtp` 之 `move-files-to-storage` 錯誤文字遮罩路徑未涵蓋 | 同上 |
 | `WDwdataFtp` 全量模式沿用失敗檔之前次版本 | R-WD-01 | 已做 | 同上 |
-| `WDwdataFtp` 只搬入已處理成功者 | R-WD-02~04 | 已做(至少一次語意) | 同上 |
+| `WDwdataFtp` 只搬入已處理成功者 | R-WD-02~04 | 已做(成功以本輪結果 `success` 判定,任務狀態更新失敗之項不搬入、下輪重試;取消之輪不搬移;至少一次語意;單項失敗不中止本輪,其餘項照常處理並搬入) | 同上 |
 | opt 轉交與自身檢測 | R-WD-05 | 已做 | 同上 |
+| 使用端 `funBeforeEnd` 收到本輪結果 `{ success, failed, msgCancel }` | R-WD-06 | 已做(搬移後呼叫;取消之輪亦呼叫) | 同上 |
 | wsemi 列舉函數第 2 參數(`{ levelLimit: 1 }`,僅第 1 層) | R-WS-01~03 | 已做:`src` 3 處與測試 8 處(2026-11-26);3 處 `src` 站點各有層數語意測試 | 同上(4 案) |
 
 ## 依賴與版本
 
-- `w-ftp ^1.0.76`(1.0.76 起其內部列舉已用 wsemi 新簽章);`wsemi ^1.9.82`(列舉函數第 2 參數改為 `opt`〔1.9.80〕;公開 `getOptReader`〔1.9.82〕);`w-dwdata-builder ^1.1.41`。
-- 套件 `version` 未動(1.1.40;破壞性變更由發布流程決定版號)。
+- `w-ftp ^1.0.80`(1.0.76 起其內部列舉已用 wsemi 新簽章);`wsemi ^1.9.83`(列舉函數第 2 參數改為 `opt`〔1.9.80〕;公開 `getOptReader`〔1.9.82〕);`w-dwdata-builder ^1.1.46`(帶 `w-data-scheduler` 1.0.77:單項失敗不中止本輪、`funBeforeEnd` 與 `end` 收本輪結果;`fdDwCurrent` 只收處理成功之項)。
+- 套件 `version` 本輪未動(現為 1.1.47;破壞性變更由發布流程決定版號)。
 
 ## 最近一次驗證(2026-11-26)
 
@@ -33,9 +34,14 @@
 
 - 2026-11-27(wsemi 1.9.82,opt 讀取收斂改用 `getOptReader`):`npm test` 90 案全綠(新增 6 案:`test/unit-optReader.test.mjs` 4 案、`unit-downloadFail` 2 案);修前鏡像(自寫讀取器)對新測試為 5 紅;對 `src/` 植入 9 項接線單點變異全被殺;eslint 0 錯誤。
 
+- 2026-11-28(w-dwdata-builder 1.1.46／w-data-scheduler 1.0.77 之下游配合):改檔前全套 87 綠、3 紅(「變更檔處理失敗」3 組合);改後 `npm test` 91 案全綠(新增 1 案);受影響之 12 案連跑 20 次皆 0 失敗;新案對改前 `src` 為紅;對 `funBeforeEnd` 包裝與「只搬入成功者」植入 7 項單點變異全被殺;eslint 0 錯誤;`.jsdoc` 無 ERROR。
+
+- 2026-11-28(搬移改依本輪結果 `success` 判定、取消之輪不搬移):新增 10 案對改前 `src` 全紅、改後全綠;`npm test` 101 案全綠;受影響之 24 案連跑 20 次皆 0 失敗;植入 9 項單點變異(改回自記 id、`success` 與 `failed` 對調、忽略 `msgCancel`、取消不清暫存夾、漏 `modify`、漏 `remove`、不分成敗、取消判定移位、`failed` 之變更不另列未處理)全被殺(改前之測試檔對「改回自記 id」「忽略 `msgCancel`」「不清暫存夾」「`failed` 之變更」4 項存活);R-WS-01 比對基準列舉站點之 2 項變異仍被殺;eslint 0 錯誤;`.jsdoc` 無 ERROR。
+
 ## 已知缺口與待辦
 
-- 範圍外(他套件):w-data-scheduler 逐項遇錯即停;w-dwdata-builder 之 `fdDwAttime → fdDwCurrent` 無條件同步(見 R-WD 範圍外一節)。
+- 取消之輪不搬移:自給 `funGetCurrent` 而比對基準領先 `fdDwStorage` 者(取消原因 `'no difference'`),`fdDwStorage` 於下次有差異之輪才更新(R-WD-04)。
+- 自給 `funDownload` 時沒有下載清單,下載檔案不會搬入 `fdDwStorage`(搬移階段記 `error` `no files`)。
 - 以鏡像方式同步 `downloadFiles` 結果之使用端須自行處理 `failed`。
 - 升級後第一輪:SFTP 全量模式下,`fdDwStorage` 內來自舊版 w-ftp(SFTP 忽略 `levelLimit`)之子資料夾內容會被鏡像同步移除(與 FTP 行為一致,且依 JSDoc 本就只處理第 1 層)。
 - 起手 `fsCleanFolder(fdDwStorageTemp)` 失敗(例如目標為符號連結)現為整輪失敗;原為靜默續行並把前輪檔案當成果交出。

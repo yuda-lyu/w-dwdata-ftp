@@ -17,7 +17,7 @@ import fakeFtpServer from './lib/fakeFtpServer.mjs'
 //3. 連線建立失敗、ls失敗、重新連線失敗、有檔案須下載而全部失敗(不交出空清單當成功), 皆為整輪失敗: reject, 並清空fdDwStorageTemp
 //4. 下載中途截斷(FTP資料連線中途關閉)由w-ftp(1.0.75以上)核對大小而reject, 本套件視為該次失敗並重試
 //5. WDwdataFtp全量模式下, 失敗之檔須沿用fdDwStorage內前次檔案視為未變更, 不得被當成已刪除而連動刪除fdDwStorage與fdResult內之數據; 整輪失敗時須取消該輪
-//6. WDwdataFtp主階段(funAdd、funModify、funRemove)處理失敗、被略過或被取消時, 未處理成功之檔不搬入fdDwStorage(刪除未處理成功者不自fdDwStorage移除), 下輪補處理; 已處理成功者照常搬入
+//6. WDwdataFtp主階段(funAdd、funModify、funRemove)某項處理失敗時不中止本輪, 其餘項照常處理(w-data-scheduler 1.0.77起); 是否處理成功以排程器本輪結果之success為準, 未列於success者(處理失敗, 或函數成功而任務狀態更新失敗)不搬入fdDwStorage(刪除項不自fdDwStorage移除), 下輪補處理; 已處理成功者照常搬入; 本輪取消(msgCancel有值)時不搬移; 使用端opt.funBeforeEnd於搬移完成後收到本輪結果{ success, failed, msgCancel }
 //7. opt.onTrace(觀察回調)於各事件同步呼叫, 回調之拋錯與rejection不影響結果; opt.debug為true時非預期之opt輸入警告(固定詞彙、不含輸入值); 外來錯誤文字遮罩帳密
 //8. 列舉資料夾之wsemi函數(fsTreeFolder、fsTreeFolderWithHash)第2參數為opt, 本套件之3處列舉(downloadFiles結束時收檔、WDwdataFtp沿用前次檔案後取檔、WDwdataFtp取fdDwStorage之hash清單)皆僅限第1層(opt.levelLimit為1), 子資料夾內之檔案不列入
 describe('downloadFail', function() {
@@ -970,14 +970,16 @@ describe('downloadFail', function() {
         }
     })
 
-    //runRound, 以WDwdataFtp執行一輪, 回傳change事件(濾除執行時間欄位)與srLog收到之info與error紀錄
+    //runRound, 以WDwdataFtp執行一輪, 回傳change事件(濾除執行時間欄位)、srLog收到之info、warn與error紀錄, 及end事件監聽函數收到之本輪結果
     //onInfo為srLog.info之同步回調(供以事件同步地於指定階段注入故障)
     //fnOpt為傳給WDwdataFtp前對opt之最後加工函數(opt) => opt(供掛上讀取拋錯之存取器: 以展開語法合併之optExtra會於合併時即讀取存取器)
     let runRound = async(env, optExtra = {}, onInfo = null, fnOpt = null) => {
         let pm = w.genPm()
         let ms = []
         let msInfo = []
+        let msWarn = []
         let msError = []
+        let resEnd = null
         let opt = {
             useExpandOnOldFiles: false,
             fdTagRemove: env.fds.fdTagRemove,
@@ -997,6 +999,9 @@ describe('downloadFail', function() {
                         onInfo(v)
                     }
                 },
+                warn: (v) => {
+                    msWarn.push(v)
+                },
                 error: (v) => {
                     msError.push(v)
                 },
@@ -1014,11 +1019,12 @@ describe('downloadFail', function() {
             delete r.timeRunSpent
             ms.push(r)
         })
-        ev.on('end', () => {
+        ev.on('end', (res) => {
+            resEnd = res
             pm.resolve()
         })
         await pm
-        return { ms, msInfo, msError }
+        return { ms, msInfo, msWarn, msError, resEnd }
     }
 
     //getCmp, 比對階段之統計
@@ -1029,6 +1035,28 @@ describe('downloadFail', function() {
     //isMutating, 對fdDwStorage與fdResult做新增、變更或刪除之事件
     let isMutating = (m) => {
         return /^proc-(add|diff|remove)-/.test(m.event)
+    }
+
+    //seqItems, 主階段之事件序列(逐項之start、done與error、失敗彙總之warn、取消), 各事件以type:event:id:msg表示
+    let seqItems = (ms) => {
+        return ms
+            .filter((m) => isMutating(m) || m.event === 'fail-items-stage-main' || /^cancel-stage-/.test(m.event))
+            .map((m) => `${m.type}:${m.event}:${_.get(m, 'id', '')}:${m.msg}`)
+    }
+
+    //mkItemFail, 逐項處理失敗項之結果格式(w-data-scheduler之failed各項, msg為固定詞彙)
+    let mkItemFail = (id, mode) => {
+        let kp = {
+            add: ['proc-add-callfun-add', 'funAdd failed'],
+            modify: ['proc-diff-callfun-modify', 'funModify failed'],
+            remove: ['proc-remove-callfun-remove', 'funRemove failed'],
+        }
+        return { id, mode, event: kp[mode][0], msg: kp[mode][1] }
+    }
+
+    //mkWarnFail, 本輪有失敗項時之彙總紀錄(srLog.warn)
+    let mkWarnFail = (items) => {
+        return [{ event: 'fail-items-stage-main', numFail: items.length, items, msg: 'some items failed' }]
     }
 
     //checkCancel, 驗證整輪失敗須取消該輪: 僅1筆下載階段之錯誤事件, 有cancel-stage-main, 無比對與任何新增/變更/刪除事件
@@ -1124,9 +1152,10 @@ describe('downloadFail', function() {
 
     })
 
-    //mkProc, 模擬使用端自訂之主階段處理函數funAdd、funModify、funRemove(比照預設實作將檔案複製至fdResult/{id}/{id}), 可令指定id處理失敗
+    //mkProc, 模擬使用端自訂之主階段處理函數funAdd、funModify、funRemove(比照預設實作將檔案複製至fdResult/{id}/{id}), 可令指定id處理失敗(failAdd、failRemove)
+    //或令指定id之新增/變更函數成功而其後排程器之任務狀態更新失敗(failState: 於項目物件掛BigInt, 排程器於函數成功後以JSON.stringify記任務狀態而拋錯)
     let mkProc = (env) => {
-        let ctl = { failAdd: [], failRemove: [] }
+        let ctl = { failAdd: [], failRemove: [], failState: [] }
         let put = async(v) => {
             if (_.includes(ctl.failAdd, v.id)) {
                 throw new Error(`fail to process ${v.id}`)
@@ -1134,6 +1163,9 @@ describe('downloadFail', function() {
             let fd = `${env.fds.fdResult}/${v.id}`
             w.fsCleanFolder(fd)
             fs.copyFileSync(`${env.fds.fdDwStorageTemp}/${v.id}`, `${fd}/${v.id}`)
+            if (_.includes(ctl.failState, v.id)) {
+                v.stamp = 1n
+            }
         }
         let funRemove = async(v) => {
             if (_.includes(ctl.failRemove, v.id)) {
@@ -1144,7 +1176,7 @@ describe('downloadFail', function() {
         return { ctl, opt: { funAdd: put, funModify: put, funRemove } }
     }
 
-    //規格6: 主階段某檔處理失敗(其後之檔被略過)或主階段被取消時, 未處理成功之新增/變更檔不得搬入fdDwStorage、刪除失敗之檔不得自fdDwStorage移除, 使下輪仍比對出差異而再處理, 已處理成功者照常搬入
+    //規格6: 主階段某檔處理失敗(其餘項照常處理)或主階段被取消時, 未處理成功之新增/變更檔不得搬入fdDwStorage、刪除失敗之檔不得自fdDwStorage移除, 使下輪仍比對出差異而再處理, 已處理成功者照常搬入
     _.each([
         ['SFTP', false],
         ['FTP', false],
@@ -1154,42 +1186,53 @@ describe('downloadFail', function() {
         let key = `${transportation.toLowerCase()}_${useExpandOnOldFiles ? 'exp' : 'full'}`
         let mode = useExpandOnOldFiles ? '增量模式' : '全量模式'
 
-        it(`WDwdataFtp(${transportation}, ${mode}): 新增檔處理失敗而其後被略過時, 未處理成功之檔不搬入fdDwStorage, 下輪全部補處理`, async () => {
+        it(`WDwdataFtp(${transportation}, ${mode}): 新增檔處理失敗時其後之檔照常處理並搬入, 失敗之檔不搬入fdDwStorage, 下輪僅補處理該檔`, async () => {
             let env = await setup(`pa_${key}`, transportation)
             try {
                 let proc = mkProc(env)
                 let optExtra = { useExpandOnOldFiles, ...proc.opt }
 
-                //第1輪: a2.bin處理失敗, 其後之檔被略過
+                //第1輪: a2.bin處理失敗, 其餘項(含其後之a3.txt)照常處理, 本輪不取消
                 proc.ctl.failAdd = ['a2.bin']
                 let round1 = await runRound(env, optExtra)
-                let storage1 = digestFolder(env.fds.fdDwStorage)
-                let result1 = digestResult(env.fds.fdResult)
                 assert.strict.deepEqual({
-                    errors: round1.ms.filter((m) => m.type === 'error').map((m) => m.event),
                     cmp: getCmp(round1.ms),
-                    consistent: _.isEqual(storage1, result1), //spec 6: 搬入fdDwStorage者即為已處理成功(有結果)者
-                    notAll: _.size(storage1) < 3, //spec 6: 失敗檔(及被略過者)不得搬入
-                    hasFail: _.has(storage1, 'a2.bin'),
+                    seq: seqItems(round1.ms),
+                    warn: round1.msWarn,
+                    storage: digestFolder(env.fds.fdDwStorage), //spec 6: 僅已處理成功者搬入, 失敗之a2.bin不得搬入
+                    result: digestResult(env.fds.fdResult),
                 }, {
-                    errors: ['proc-add-callfun-add'],
                     cmp: { numRemove: 0, numAdd: 3, numModify: 0, numSame: 0 },
-                    consistent: true,
-                    notAll: true,
-                    hasFail: false,
+                    seq: [
+                        'info:proc-add-callfun-add:a1.txt:start...',
+                        'info:proc-add-callfun-add:a1.txt:done',
+                        'info:proc-add-callfun-add:a2.bin:start...',
+                        'error:proc-add-callfun-add:a2.bin:fail to process a2.bin',
+                        'info:proc-add-callfun-add:a3.txt:start...',
+                        'info:proc-add-callfun-add:a3.txt:done',
+                        'warn:fail-items-stage-main::some items failed',
+                    ],
+                    warn: mkWarnFail([mkItemFail('a2.bin', 'add')]),
+                    storage: digestsOf(contents, ['a1.txt', 'a3.txt']),
+                    result: digestsOf(contents, ['a1.txt', 'a3.txt']),
                 })
 
-                //第2輪: 故障排除, 下輪須把第1輪未處理成功者(失敗與被略過者)全部補處理, 已處理成功者視為未變
+                //第2輪: 故障排除, 下輪僅補處理第1輪失敗之a2.bin, 已處理成功者視為未變
                 proc.ctl.failAdd = []
                 let round2 = await runRound(env, optExtra)
                 assert.strict.deepEqual({
-                    errors: round2.ms.filter((m) => m.type === 'error').length,
                     cmp: getCmp(round2.ms),
+                    seq: seqItems(round2.ms),
+                    warn: round2.msWarn,
                     storage: digestFolder(env.fds.fdDwStorage),
                     result: digestResult(env.fds.fdResult),
                 }, {
-                    errors: 0,
-                    cmp: { numRemove: 0, numAdd: 3 - _.size(storage1), numModify: 0, numSame: _.size(storage1) },
+                    cmp: { numRemove: 0, numAdd: 1, numModify: 0, numSame: 2 },
+                    seq: [
+                        'info:proc-add-callfun-add:a2.bin:start...',
+                        'info:proc-add-callfun-add:a2.bin:done',
+                    ],
+                    warn: [],
                     storage: digestsOf(contents),
                     result: digestsOf(contents),
                 })
@@ -1199,46 +1242,64 @@ describe('downloadFail', function() {
             }
         })
 
-        it(`WDwdataFtp(${transportation}, ${mode}): 變更檔處理失敗而其後被略過時, 未處理成功之檔維持前次版本於fdDwStorage, 下輪補處理`, async () => {
+        it(`WDwdataFtp(${transportation}, ${mode}): 變更檔處理失敗時其後之檔照常處理, 各失敗之檔維持前次版本於fdDwStorage, 下輪補處理`, async () => {
             let env = await setup(`pm_${key}`, transportation)
             try {
                 let proc = mkProc(env)
                 let optExtra = { useExpandOnOldFiles, ...proc.opt }
                 let a1v2 = mkContent('a1.txt', 4, '-v2')
                 let a2v2 = mkContent('a2.bin', 12001, '-v2')
+                let a3v2 = mkContent('a3.txt', 6, '-v2')
 
                 //第1輪: 正常
                 await runRound(env, optExtra)
 
-                //第2輪: a1.txt與a2.bin皆變更, 先處理者失敗, 其後被略過
+                //第2輪: 3個檔案皆變更, a1.txt與a2.bin處理失敗, 其後之a3.txt照常處理
                 fs.writeFileSync(`${env.fds.fdSrv}/a1.txt`, a1v2, 'utf8')
                 fs.writeFileSync(`${env.fds.fdSrv}/a2.bin`, a2v2, 'utf8')
+                fs.writeFileSync(`${env.fds.fdSrv}/a3.txt`, a3v2, 'utf8')
                 proc.ctl.failAdd = ['a1.txt', 'a2.bin']
                 let round2 = await runRound(env, optExtra)
                 let storage2 = digestFolder(env.fds.fdDwStorage)
                 let result2 = digestResult(env.fds.fdResult)
                 let numOld = _.filter(['a1.txt', 'a2.bin'], (id) => storage2[id] === digestStr(contents[id])).length
                 assert.strict.deepEqual({
-                    errors: round2.ms.filter((m) => m.type === 'error').map((m) => m.event),
-                    consistent: _.isEqual(storage2, result2), //spec 6: fdDwStorage與fdResult一致(皆為前次版本)
-                    numOld, //spec 6: 2個變更檔皆處理失敗或被略過, 故皆維持前次版本
+                    cmp: getCmp(round2.ms),
+                    seq: seqItems(round2.ms),
+                    warn: round2.msWarn,
+                    consistent: _.isEqual(storage2, result2), //spec 6: fdDwStorage與fdResult一致(失敗者皆為前次版本)
+                    numOld, //spec 6: 2個處理失敗之變更檔皆維持前次版本
+                    storage: storage2, //spec 6: 已處理成功之a3.txt照常搬入新版
                 }, {
-                    errors: ['proc-diff-callfun-modify'],
+                    cmp: { numRemove: 0, numAdd: 0, numModify: 3, numSame: 0 },
+                    seq: [
+                        'info:proc-diff-callfun-modify:a1.txt:start...',
+                        'error:proc-diff-callfun-modify:a1.txt:fail to process a1.txt',
+                        'info:proc-diff-callfun-modify:a2.bin:start...',
+                        'error:proc-diff-callfun-modify:a2.bin:fail to process a2.bin',
+                        'info:proc-diff-callfun-modify:a3.txt:start...',
+                        'info:proc-diff-callfun-modify:a3.txt:done',
+                        'warn:fail-items-stage-main::some items failed',
+                    ],
+                    warn: mkWarnFail([mkItemFail('a1.txt', 'modify'), mkItemFail('a2.bin', 'modify')]),
                     consistent: true,
                     numOld: 2,
+                    storage: { ...digestsOf(contents, ['a1.txt', 'a2.bin']), 'a3.txt': digestStr(a3v2) },
                 })
 
-                //第3輪: 故障排除, 2個變更檔皆補處理
+                //第3輪: 故障排除, 僅補處理第2輪失敗之2個變更檔, 已處理成功之a3.txt視為未變
                 proc.ctl.failAdd = []
                 let round3 = await runRound(env, optExtra)
                 assert.strict.deepEqual({
                     cmp: getCmp(round3.ms),
+                    warn: round3.msWarn,
                     storage: digestFolder(env.fds.fdDwStorage),
                     result: digestResult(env.fds.fdResult),
                 }, {
                     cmp: { numRemove: 0, numAdd: 0, numModify: 2, numSame: 1 },
-                    storage: { 'a1.txt': digestStr(a1v2), 'a2.bin': digestStr(a2v2), 'a3.txt': digestStr(contents['a3.txt']) },
-                    result: { 'a1.txt': digestStr(a1v2), 'a2.bin': digestStr(a2v2), 'a3.txt': digestStr(contents['a3.txt']) },
+                    warn: [],
+                    storage: { 'a1.txt': digestStr(a1v2), 'a2.bin': digestStr(a2v2), 'a3.txt': digestStr(a3v2) },
+                    result: { 'a1.txt': digestStr(a1v2), 'a2.bin': digestStr(a2v2), 'a3.txt': digestStr(a3v2) },
                 })
             }
             finally {
@@ -1282,6 +1343,368 @@ describe('downloadFail', function() {
                     cmp: { numRemove: 0, numAdd: 0, numModify: 1, numSame: 2 },
                     storage: { ...digestsOf(contents), 'a1.txt': digestStr(a1v2) },
                     result: { ...digestsOf(contents), 'a1.txt': digestStr(a1v2) },
+                })
+            }
+            finally {
+                await env.clean()
+            }
+        })
+
+    })
+
+    //規格6: 使用端opt.funBeforeEnd收到本輪結果{ success: { add, modify, remove }, failed, msgCancel }, 呼叫時fdDwStorage之搬移已完成, 可為async函數(其完成後本輪才結束); 取消之輪亦呼叫, msgCancel為取消訊息
+    it('WDwdataFtp(SFTP, 全量模式): 使用端opt.funBeforeEnd收到本輪結果(成功項、失敗項、取消訊息), 呼叫時fdDwStorage已搬移完畢, end事件收到內容相同之結果', async () => {
+        let env = await setup('pb_sftp', 'SFTP')
+        try {
+            let proc = mkProc(env)
+            let calls = []
+            let nDone = 0
+            let funBeforeEnd = async (...args) => {
+                calls.push({ args, storage: digestFolder(env.fds.fdDwStorage) })
+                await new Promise((resolve) => setImmediate(resolve))
+                nDone++
+            }
+            let optExtra = { ...proc.opt, funBeforeEnd }
+            let a1v2 = mkContent('a1.txt', 4, '-v2')
+            let resEmpty = { add: [], modify: [], remove: [] }
+
+            //run, 執行一輪並回傳本輪使用端funBeforeEnd之收到內容與end事件之結果
+            let run = async (optRound = {}) => {
+                let nPrev = calls.length
+                let round = await runRound(env, { ...optExtra, ...optRound })
+                let got = calls.slice(nPrev)
+                return {
+                    nCall: got.length,
+                    nArgs: got.map((v) => v.args.length),
+                    res: got.map((v) => v.args[0]),
+                    resEnd: round.resEnd,
+                    storage: got.map((v) => v.storage),
+                    nDone, //async之funBeforeEnd須於本輪結束(end事件)前完成
+                }
+            }
+
+            //expectOf, 本輪僅呼叫1次funBeforeEnd, 收1個引數, end事件之結果內容與之相同
+            let expectOf = (res, storage, nDoneExp) => {
+                return { nCall: 1, nArgs: [1], res: [res], resEnd: res, storage: [storage], nDone: nDoneExp }
+            }
+
+            //第1輪: a2.bin新增失敗, 其餘成功
+            proc.ctl.failAdd = ['a2.bin']
+            assert.strict.deepEqual(await run(), expectOf({
+                success: { add: ['a1.txt', 'a3.txt'], modify: [], remove: [] },
+                failed: [mkItemFail('a2.bin', 'add')],
+                msgCancel: '',
+            }, digestsOf(contents, ['a1.txt', 'a3.txt']), 1))
+
+            //第2輪: 伺服器a1.txt變更、刪除a3.txt; a2.bin新增成功, a3.txt刪除失敗
+            fs.writeFileSync(`${env.fds.fdSrv}/a1.txt`, a1v2, 'utf8')
+            fs.unlinkSync(`${env.fds.fdSrv}/a3.txt`)
+            proc.ctl.failAdd = []
+            proc.ctl.failRemove = ['a3.txt']
+            assert.strict.deepEqual(await run(), expectOf({
+                success: { add: ['a2.bin'], modify: ['a1.txt'], remove: [] },
+                failed: [mkItemFail('a3.txt', 'remove')],
+                msgCancel: '',
+            }, { ...digestsOf(contents), 'a1.txt': digestStr(a1v2) }, 2))
+
+            //第3輪: 故障排除, 僅補處理a3.txt之刪除
+            proc.ctl.failRemove = []
+            let storageEnd = { 'a1.txt': digestStr(a1v2), 'a2.bin': digestStr(contents['a2.bin']) }
+            assert.strict.deepEqual(await run(), expectOf({
+                success: { add: [], modify: [], remove: ['a3.txt'] },
+                failed: [],
+                msgCancel: '',
+            }, storageEnd, 3))
+
+            //第4輪: 無差異
+            assert.strict.deepEqual(await run(), expectOf({
+                success: resEmpty,
+                failed: [],
+                msgCancel: 'no difference',
+            }, storageEnd, 4))
+
+            //第5輪: 取得既有數據失敗, 本輪取消
+            let funGetCurrentErr = async () => {
+                throw new Error('fail to get current')
+            }
+            assert.strict.deepEqual(await run({ funGetCurrent: funGetCurrentErr }), expectOf({
+                success: resEmpty,
+                failed: [],
+                msgCancel: 'error at proc-callfun-getCurrent',
+            }, storageEnd, 5))
+        }
+        finally {
+            await env.clean()
+        }
+    })
+
+    //digestCurrent, fdDwCurrent內各數據檔<id>.json所記之id與內容雜湊(w-dwdata-builder僅收處理成功之項)
+    let digestCurrent = (fd) => {
+        let kp = {}
+        w.fsTreeFolder(fd, { levelLimit: 1 }).forEach((v) => {
+            let o = JSON.parse(fs.readFileSync(v.path, 'utf8'))
+            kp[o.id] = o.hash
+        })
+        return kp
+    }
+
+    //mkItemFailState, 使用端函數成功而其後排程器任務狀態更新失敗之項, 其結果格式
+    let mkItemFailState = (id, mode) => {
+        return { ...mkItemFail(id, mode), msg: 'failed to update task state' }
+    }
+
+    //snapOf, 一輪結束後之比對統計、本輪結果與各資料夾內容
+    let snapOf = (env, round) => {
+        return {
+            cmp: getCmp(round.ms),
+            res: round.resEnd,
+            storage: digestFolder(env.fds.fdDwStorage),
+            current: digestCurrent(env.fds.fdDwCurrent),
+            result: digestResult(env.fds.fdResult),
+        }
+    }
+
+    //mkRes, 排程器本輪結果
+    let mkRes = (success = {}, failed = []) => {
+        return { success: { add: [], modify: [], remove: [], ...success }, failed, msgCancel: '' }
+    }
+
+    //規格6: 函數成功而其後排程器任務狀態更新失敗之項, 排程器列於failed(msg為'failed to update task state')而不列於success, 不得搬入fdDwStorage(與w-dwdata-builder之fdDwCurrent一致), 下輪重試且成功後始搬入
+    _.each([
+        ['SFTP', false],
+        ['FTP', false],
+        ['SFTP', true],
+    ], ([transportation, useExpandOnOldFiles]) => {
+
+        let key = `${transportation.toLowerCase()}_${useExpandOnOldFiles ? 'exp' : 'full'}`
+        let mode = useExpandOnOldFiles ? '增量模式' : '全量模式'
+
+        it(`WDwdataFtp(${transportation}, ${mode}): 新增與變更函數成功而任務狀態更新失敗之項不搬入fdDwStorage, 下輪重試且成功後搬入`, async () => {
+            let env = await setup(`sa_${key}`, transportation)
+            try {
+                let proc = mkProc(env)
+                let optExtra = { useExpandOnOldFiles, ...proc.opt }
+                let a1v2 = mkContent('a1.txt', 4, '-v2')
+                let a3v2 = mkContent('a3.txt', 6, '-v2')
+                let ctsV2 = { ...contents, 'a1.txt': a1v2, 'a3.txt': a3v2 }
+                let ctsA3v2 = { ...contents, 'a3.txt': a3v2 }
+
+                //第1輪: a2.bin新增函數成功而任務狀態更新失敗
+                proc.ctl.failState = ['a2.bin']
+                let round1 = await runRound(env, optExtra)
+                assert.strict.deepEqual(snapOf(env, round1), {
+                    cmp: { numRemove: 0, numAdd: 3, numModify: 0, numSame: 0 },
+                    res: mkRes({ add: ['a1.txt', 'a3.txt'] }, [mkItemFailState('a2.bin', 'add')]),
+                    storage: digestsOf(contents, ['a1.txt', 'a3.txt']), //spec 6: 未列於success之a2.bin不得搬入
+                    current: digestsOf(contents, ['a1.txt', 'a3.txt']),
+                    result: digestsOf(contents), //函數本身已處理a2.bin(至少一次語意, 下輪再處理)
+                })
+
+                //第2輪: 故障排除, a2.bin仍比對為新增而重試, 成功後搬入
+                proc.ctl.failState = []
+                let round2 = await runRound(env, optExtra)
+                assert.strict.deepEqual(snapOf(env, round2), {
+                    cmp: { numRemove: 0, numAdd: 1, numModify: 0, numSame: 2 },
+                    res: mkRes({ add: ['a2.bin'] }),
+                    storage: digestsOf(contents),
+                    current: digestsOf(contents),
+                    result: digestsOf(contents),
+                })
+
+                //第3輪: a1.txt與a3.txt皆變更, a1.txt變更函數成功而任務狀態更新失敗
+                fs.writeFileSync(`${env.fds.fdSrv}/a1.txt`, a1v2, 'utf8')
+                fs.writeFileSync(`${env.fds.fdSrv}/a3.txt`, a3v2, 'utf8')
+                proc.ctl.failState = ['a1.txt']
+                let round3 = await runRound(env, optExtra)
+                assert.strict.deepEqual(snapOf(env, round3), {
+                    cmp: { numRemove: 0, numAdd: 0, numModify: 2, numSame: 1 },
+                    res: mkRes({ modify: ['a3.txt'] }, [mkItemFailState('a1.txt', 'modify')]),
+                    storage: digestsOf(ctsA3v2), //spec 6: 未列於success之a1.txt維持前次版本, 成功之a3.txt搬入新版
+                    current: digestsOf(ctsA3v2),
+                    result: digestsOf(ctsV2),
+                })
+
+                //第4輪: 故障排除, a1.txt仍比對為變更而重試, 成功後搬入
+                proc.ctl.failState = []
+                let round4 = await runRound(env, optExtra)
+                assert.strict.deepEqual(snapOf(env, round4), {
+                    cmp: { numRemove: 0, numAdd: 0, numModify: 1, numSame: 2 },
+                    res: mkRes({ modify: ['a1.txt'] }),
+                    storage: digestsOf(ctsV2),
+                    current: digestsOf(ctsV2),
+                    result: digestsOf(ctsV2),
+                })
+            }
+            finally {
+                await env.clean()
+            }
+        })
+
+    })
+
+    //規格6: 刪除項亦同。刪除防抖(timeToleranceRemove)時, 排程器於funRemove成功後寫刪除標記檔, 該路徑為資料夾時寫入失敗, 為任務狀態更新失敗
+    _.each(['SFTP', 'FTP'], (transportation) => {
+
+        it(`WDwdataFtp(${transportation}, 全量模式): 刪除函數成功而任務狀態更新失敗之項不自fdDwStorage移除, 下輪重試且成功後移除`, async () => {
+            let env = await setup(`sr_${transportation.toLowerCase()}`, transportation)
+            try {
+                let proc = mkProc(env)
+                let optExtra = { ...proc.opt, timeToleranceRemove: 60 * 1000 }
+                let ns = ['a1.txt', 'a2.bin'] //刪除a3.txt後之檔案
+                await runRound(env, optExtra)
+
+                //第2輪: 伺服器刪除a3.txt, 刪除函數成功而任務狀態更新失敗
+                fs.unlinkSync(`${env.fds.fdSrv}/a3.txt`)
+                w.fsCreateFolder(`${env.fds.fdTagRemove}/a3.txt`)
+                let round2 = await runRound(env, optExtra)
+                assert.strict.deepEqual(snapOf(env, round2), {
+                    cmp: { numRemove: 1, numAdd: 0, numModify: 0, numSame: 2 },
+                    res: mkRes({}, [mkItemFailState('a3.txt', 'remove')]),
+                    storage: digestsOf(contents), //spec 6: 未列於success之a3.txt不得自fdDwStorage移除
+                    current: digestsOf(contents),
+                    result: digestsOf(contents, ns), //函數本身已處理a3.txt之刪除
+                })
+
+                //第3輪: 故障排除, a3.txt仍比對為刪除而重試, 成功後移除
+                w.fsDeleteFolder(`${env.fds.fdTagRemove}/a3.txt`)
+                let round3 = await runRound(env, optExtra)
+                assert.strict.deepEqual(snapOf(env, round3), {
+                    cmp: { numRemove: 1, numAdd: 0, numModify: 0, numSame: 2 },
+                    res: mkRes({ remove: ['a3.txt'] }),
+                    storage: digestsOf(contents, ns),
+                    current: digestsOf(contents, ns),
+                    result: digestsOf(contents, ns),
+                })
+            }
+            finally {
+                await env.clean()
+            }
+        })
+
+    })
+
+    //規格6: 本輪取消(msgCancel有值)時不搬移, fdDwStorage維持前次內容(fdDwStorageTemp仍清空)
+    //以自給之funGetCurrent(回傳本輪fdDwAttime所記之hash清單, 即比對基準領先fdDwStorage)使本輪因'no difference'取消, 而下載所得與fdDwStorage不同
+    _.each([false, true], (useExpandOnOldFiles) => {
+
+        let mode = useExpandOnOldFiles ? '增量模式' : '全量模式'
+        let key = useExpandOnOldFiles ? 'exp' : 'full'
+
+        it(`WDwdataFtp(SFTP, ${mode}): 本輪取消(無差異)時不搬移, fdDwStorage維持前次內容, 下次有差異之輪才搬移`, async () => {
+            let env = await setup(`nc_${key}`, 'SFTP')
+            try {
+                let proc = mkProc(env)
+                let optExtra = { useExpandOnOldFiles, ...proc.opt }
+                let a1v2 = mkContent('a1.txt', 4, '-v2')
+                let ctsV2 = { ...contents, 'a1.txt': a1v2 }
+                let nsV2 = useExpandOnOldFiles ? names : ['a1.txt', 'a2.bin'] //增量模式不刪除既有檔案
+                let funGetCurrentAhead = async () => {
+                    return w.fsTreeFolder(env.fds.fdDwAttime, { levelLimit: 1 }).map((v) => JSON.parse(fs.readFileSync(v.path, 'utf8')))
+                }
+                await runRound(env, optExtra)
+
+                //第2輪: 伺服器a1.txt變更並刪除a3.txt, 比對基準等同本輪下載所得, 本輪以'no difference'取消
+                fs.writeFileSync(`${env.fds.fdSrv}/a1.txt`, a1v2, 'utf8')
+                fs.unlinkSync(`${env.fds.fdSrv}/a3.txt`)
+                let round2 = await runRound(env, { ...optExtra, funGetCurrent: funGetCurrentAhead })
+                assert.strict.deepEqual({
+                    res: round2.resEnd,
+                    mutating: round2.ms.filter(isMutating).map((m) => `${m.event}:${m.id}`),
+                    storage: digestFolder(env.fds.fdDwStorage), //spec 6: 取消之輪不搬移
+                    temp: w.fsTreeFolder(env.fds.fdDwStorageTemp, { levelLimit: 5 }).map((v) => v.name),
+                    errors: round2.msError,
+                }, {
+                    res: { ...mkRes(), msgCancel: 'no difference' },
+                    mutating: [],
+                    storage: digestsOf(contents),
+                    temp: [],
+                    errors: [],
+                })
+
+                //第3輪: 改回預設比對基準(fdDwStorage), 仍比對出差異而處理並搬移
+                let round3 = await runRound(env, optExtra)
+                assert.strict.deepEqual({
+                    cmp: getCmp(round3.ms),
+                    storage: digestFolder(env.fds.fdDwStorage),
+                }, {
+                    cmp: useExpandOnOldFiles ? { numRemove: 0, numAdd: 0, numModify: 1, numSame: 2 } : { numRemove: 1, numAdd: 0, numModify: 1, numSame: 1 },
+                    storage: digestsOf(ctsV2, nsV2),
+                })
+            }
+            finally {
+                await env.clean()
+            }
+        })
+
+    })
+
+    //規格6: 取得既有數據回傳非陣列時排程器於比對前取消本輪(msgCancel有值), 本輪不搬移, 伺服器已刪除而刪除尚未處理之檔不得自fdDwStorage移除
+    it('WDwdataFtp(SFTP, 全量模式): 本輪取消(取得既有數據回傳非陣列)時不搬移, 伺服器刪除之檔不自fdDwStorage移除, 下輪補處理刪除', async () => {
+        let env = await setup('nn_sftp', 'SFTP')
+        try {
+            let proc = mkProc(env)
+            let optExtra = { ...proc.opt }
+            let ns = ['a1.txt', 'a2.bin'] //刪除a3.txt後之檔案
+            await runRound(env, optExtra)
+
+            //第2輪: 伺服器刪除a3.txt, funGetCurrent回傳undefined
+            fs.unlinkSync(`${env.fds.fdSrv}/a3.txt`)
+            let round2 = await runRound(env, { ...optExtra, funGetCurrent: async () => undefined })
+            assert.strict.deepEqual({
+                msgCancel: round2.resEnd.msgCancel,
+                storage: digestFolder(env.fds.fdDwStorage),
+                result: digestResult(env.fds.fdResult),
+            }, {
+                msgCancel: 'error at proc-callfun-getCurrent',
+                storage: digestsOf(contents),
+                result: digestsOf(contents),
+            })
+
+            //第3輪: 恢復, 補處理刪除
+            let round3 = await runRound(env, optExtra)
+            assert.strict.deepEqual({
+                cmp: getCmp(round3.ms),
+                storage: digestFolder(env.fds.fdDwStorage),
+                result: digestResult(env.fds.fdResult),
+            }, {
+                cmp: { numRemove: 1, numAdd: 0, numModify: 0, numSame: 2 },
+                storage: digestsOf(contents, ns),
+                result: digestsOf(contents, ns),
+            })
+        }
+        finally {
+            await env.clean()
+        }
+    })
+
+    //規格6: 列於本輪結果failed之變更檔未列於success, 不得搬入fdDwStorage
+    //自給funGetCurrent回傳之項帶hash以外之欄位時, 排程器將hash與本輪下載相同者亦判為變更, 其處理失敗者同樣不得搬入
+    _.each([false, true], (useExpandOnOldFiles) => {
+
+        let mode = useExpandOnOldFiles ? '增量模式' : '全量模式'
+        let key = useExpandOnOldFiles ? 'exp' : 'full'
+
+        it(`WDwdataFtp(SFTP, ${mode}): 排程器判為變更而hash與比對基準相同之檔處理失敗時, 仍不搬入fdDwStorage`, async () => {
+            let env = await setup(`xf_${key}`, 'SFTP')
+            try {
+                let proc = mkProc(env)
+                let optExtra = { useExpandOnOldFiles, ...proc.opt }
+                let a1v2 = mkContent('a1.txt', 4, '-v2')
+                let funGetCurrentExtra = async () => {
+                    return w.fsTreeFolder(env.fds.fdDwAttime, { levelLimit: 1 }).map((v) => ({ ...JSON.parse(fs.readFileSync(v.path, 'utf8')), note: 'x' }))
+                }
+                await runRound(env, optExtra)
+
+                //第2輪: a1.txt變更, 比對基準之hash等同本輪下載而各項另帶欄位(各檔皆判為變更), a1.txt處理失敗
+                fs.writeFileSync(`${env.fds.fdSrv}/a1.txt`, a1v2, 'utf8')
+                proc.ctl.failAdd = ['a1.txt']
+                let round2 = await runRound(env, { ...optExtra, funGetCurrent: funGetCurrentExtra })
+                assert.strict.deepEqual({
+                    res: round2.resEnd,
+                    storage: digestFolder(env.fds.fdDwStorage), //spec 6: a1.txt維持前次版本
+                }, {
+                    res: mkRes({ modify: ['a2.bin', 'a3.txt'] }, [mkItemFail('a1.txt', 'modify')]),
+                    storage: digestsOf(contents),
                 })
             }
             finally {

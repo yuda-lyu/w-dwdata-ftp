@@ -18,5 +18,7 @@
 ## 3. 使用端須知(破壞性變更)
 
 - `downloadFiles` 之回傳由陣列改為 `{ files, failed }`。
-- `WDwdataFtp` 之 `funAdd`、`funModify`、`funRemove` 須可重複執行(至少一次語意:處理失敗或被略過之檔下輪補處理)。
+- `WDwdataFtp` 之 `funAdd`、`funModify`、`funRemove` 須可重複執行(至少一次語意:未列於本輪結果 `success` 之項〔處理失敗,或函數成功而排程器任務狀態更新失敗〕與取消之輪未處理之項,下輪補處理)。
+- `WDwdataFtp` 本輪取消(`msgCancel` 有值,含 `'no difference'`)時不搬移 `fdDwStorage`;自給 `funGetCurrent` 而比對基準領先 `fdDwStorage` 者,`fdDwStorage` 於下次有差異之輪才更新。
+- `WDwdataFtp` 之使用端 `funBeforeEnd` 收到本輪結果 `{ success, failed, msgCancel }`;單項處理失敗不中止本輪(w-data-scheduler 1.0.77 起)。
 - 以鏡像方式同步 `downloadFiles` 結果之使用端須自行處理 `failed`。
