@@ -48,6 +48,7 @@
             <pre class="prettyprint source linenums"><code>import path from 'path'
 import get from 'lodash-es/get.js'
 import filter from 'lodash-es/filter.js'
+import map from 'lodash-es/map.js'
 import size from 'lodash-es/size.js'
 import isfun from 'wsemi/src/isfun.mjs'
 import isestr from 'wsemi/src/isestr.mjs'
@@ -64,6 +65,7 @@ import fsDeleteFile from 'wsemi/src/fsDeleteFile.mjs'
 import fsCleanFolder from 'wsemi/src/fsCleanFolder.mjs'
 import fsTreeFolder from 'wsemi/src/fsTreeFolder.mjs'
 import WFtp from 'w-ftp/src/WFtp.mjs'
+import chkServerName from './chkServerName.mjs'
 
 
 /**
@@ -74,6 +76,11 @@ import WFtp from 'w-ftp/src/WFtp.mjs'
  * 逐檔下載，各檔由w-ftp(1.0.75以上)先寫入下載暫存區，傳輸完成且本機大小等於遠端大小後才移至fdDwStorageTemp，故fdDwStorageTemp內不會有傳輸中途之殘檔；
  * 某檔下載失敗(含下載中途連線中斷、逾時)時，先quit斷開連線，再重新連線(以ls驗證連線可用)後重試該檔，最多重試opt.retry次，每次重試前等待opt.retryInterval；
  * 重試用盡仍失敗之檔不視為整輪失敗，僅不納入files且不留殘檔(fdDwStorageTemp內只會有完整下載之檔案)，其餘檔案照常下載，失敗之檔列於failed與srLog.error
+ *
+ * 伺服器回報之檔名會成為本機檔名，下載任何檔前逐一檢查，不合者不下載、不寫入任何檔，列入failed(name、rpath為空字串，不回顯該名稱，attempts為0，msg為固定訊息)與srLog.error，其餘檔案照常下載：
+ * 名稱須為單一名稱(非空字串、非'.'與'..'、不含'/'、反斜線與NUL，反斜線於各平台皆拒)，且組出之本機路徑須嚴格位於fdDwStorageTemp內(以path.relative判定)；
+ * Windows另拒含冒號、尾端為點或空白、保留裝置名(CON、PRN、AUX、NUL、COM0～COM9、LPT0～LPT9、CONIN$、CONOUT$等，加副檔名者亦同)之名稱(以上訊息為'invalid name from the server: must be a file name that can be saved inside fdDwStorageTemp')，
+ * 以及僅大小寫不同而落在同一本機檔之各檔(訊息為'invalid names from the server: must not differ only in letter case')；FTP之列表解析會先修剪名稱首尾之空白，故FTP下載取修剪後之名稱
  *
  * 下列情形視為整輪失敗，reject並清空fdDwStorageTemp，不回傳空清單當成功：連線建立失敗、列舉檔案(ls)失敗、重新連線失敗(最多嘗試1+retry次)、有檔案須下載而全部皆失敗(reject之錯誤物件另帶failed)、失敗後殘檔無法刪除
  *
@@ -97,10 +104,10 @@ import WFtp from 'w-ftp/src/WFtp.mjs'
  * @param {Integer} [opt.retryInterval=2000] 輸入重試前等待毫秒數之非負整數，預設2000
  * @param {Integer} [opt.timeFile=100000] 輸入w-ftp各操作之時限毫秒數之正整數，經WFtp之timeLimit傳給w-ftp，其中下載為每檔自傳輸開始起計(另有查詢遠端檔案資訊、列舉、連線、quit等操作各自計時，非單次嘗試之總和)，逾時視為該次失敗，預設100000(100s)
  * @param {Integer} [opt.timeRound=0] 輸入整輪逐檔下載之時限毫秒數之非負整數，0代表不限制，預設0；自列舉檔案後起算，逾時後不再下載與重試，尚未下載完成之檔案皆列於failed(尚未開始下載者attempts為0，逾時當下正在重試之檔為已嘗試次數且msg尾帶timeRound exceeded)，整輪可能超過逾時時刻至多一次檔案之嘗試(含quit與重新連線，各操作各自受timeFile約束)
- * @param {Function} [opt.onTrace=null] 輸入觀察回調函數，供測試與診斷以事件同步，收到凍結之事件物件{ type, ... }，回調之拋錯與rejection皆忽略，預設null；type為'ls'({ num }，須下載之檔案數)、'attempt'({ name, attempt }，開始第attempt次下載)、'done'({ name, attempt }，該檔下載完成)、'fail'({ name, attempt, msg }，該次下載失敗)、'retry'({ name, attempt }，等待retryInterval後即將進行第attempt次下載，即第attempt-1次重試)、'reconnect'({ ok, attempt, msg }，重新連線之各次結果，ok為false時msg為錯誤訊息)、'giveup'({ name, attempts, msg }，該檔重試用盡或整輪逾時而放棄)、'expired'({ num }，整輪逾時而未下載之檔案數)
+ * @param {Function} [opt.onTrace=null] 輸入觀察回調函數，供測試與診斷以事件同步，收到凍結之事件物件{ type, ... }，回調之拋錯與rejection皆忽略，預設null；type為'ls'({ num }，須下載之檔案數，不含名稱被拒者)、'reject'({ num }，有名稱被拒之檔時於'ls'之後通知其數量，不含名稱)、'attempt'({ name, attempt }，開始第attempt次下載)、'done'({ name, attempt }，該檔下載完成)、'fail'({ name, attempt, msg }，該次下載失敗)、'retry'({ name, attempt }，等待retryInterval後即將進行第attempt次下載，即第attempt-1次重試)、'reconnect'({ ok, attempt, msg }，重新連線之各次結果，ok為false時msg為錯誤訊息)、'giveup'({ name, attempts, msg }，該檔重試用盡或整輪逾時而放棄)、'expired'({ num }，整輪逾時而未下載之檔案數)
  * @param {Boolean} [opt.debug=false] 輸入是否於opt出現非預期輸入時輸出警告布林值，須恰為true才生效，警告為固定詞彙(不含輸入值)，同一鍵同一行程只警告一次，預設false
  * @param {Function} [opt.funLog=null] 輸入警告之出口函數，格式為(msg, { fn, reason, key })=>{}，其中fn為警告來源之標籤'w-dwdata-ftp downloadFiles'(由WDwdataFtp轉入時為其呼叫downloadFiles之標籤，非WDwdataFtp之標籤)，僅opt.debug為true時使用，未給則以console.warn輸出，預設null
- * @returns {Promise} 回傳Promise，resolve回傳物件{ files, failed }，files為完整下載之檔案陣列，各元素為檔案資訊物件，內含name、path、isFolder等鍵值，failed為下載失敗之檔案陣列，各元素為內含name、rpath、attempts、msg之物件(全部成功時為空陣列)；reject回傳錯誤，錯誤訊息已遮罩帳密
+ * @returns {Promise} 回傳Promise，resolve回傳物件{ files, failed }，files為完整下載之檔案陣列，各元素為檔案資訊物件，內含name、path、isFolder等鍵值，failed為下載失敗之檔案陣列，各元素為內含name、rpath、attempts、msg之物件(全部成功時為空陣列；名稱被拒者name與rpath為空字串、排於其後)；reject回傳錯誤，錯誤訊息已遮罩帳密
  * @example
  *
  * import downloadFiles from './src/downloadFiles.mjs'
@@ -139,6 +146,13 @@ import WFtp from 'w-ftp/src/WFtp.mjs'
  *
  */
 let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
+    let { files, failed } = await downloadFilesCore(st, fdDwStorageTemp, opt)
+    return { files, failed }
+}
+
+
+//downloadFilesCore, downloadFiles之本體, 供WDwdataFtp使用: 另回傳namesRejected(名稱被拒之伺服器回報名稱), 只可與本機既有檔名比對, 不可用以組路徑, 亦不對外交出
+let downloadFilesCore = async(st, fdDwStorageTemp, opt = {}) => {
     let errTemp = null
     let isFail = false
 
@@ -212,6 +226,9 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
     if (isInside(fdDownloadTemp, fdDwStorageTemp)) {
         throw new Error(`invalid st.fdDownloadTemp: must be outside of fdDwStorageTemp`)
     }
+
+    //namesRejected, 名稱被拒之伺服器回報名稱
+    let namesRejected = []
 
     //core
     let core = async() => {
@@ -304,15 +321,30 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
             //items, 僅下載第1層之檔案
             let fdRemote = isestr(st.fdIni) ? st.fdIni : '.'
             let items = filter(fps, (v) => {
-                return !v.isFolder &amp;&amp; isestr(v.name)
+                return !v.isFolder
             })
             // console.log('items', size(items))
+
+            //names, 伺服器回報之名稱用於本機路徑前檢查(單一擁有者chkServerName), 不合者不下載、不寫入任何檔, 列入failed且不回顯名稱
+            let { items: targets, invalid, clash } = chkServerName.splitNames(fdDwStorageTemp, map(items, 'name'))
+            namesRejected = [...invalid, ...clash]
             if (trace) {
-                trace('ls', { num: size(items) })
+                trace('ls', { num: size(targets) })
+                if (size(namesRejected) > 0) {
+                    trace('reject', { num: size(namesRejected) })
+                }
             }
 
             //syncToLocal, 沿用逐檔進度之事件名稱與訊息(使用端以此濾除進度紀錄)
             srLogInfo({ event: 'ftp.syncToLocal', msg: 'start...' })
+
+            //rejected, 紀錄數量與固定訊息
+            let rejected = [[invalid, chkServerName.msgName], [clash, chkServerName.msgCase]]
+            for (let [names, msg] of rejected) {
+                if (size(names) > 0) {
+                    srLogError({ event: 'ftp.syncToLocal', length: size(names), msg })
+                }
+            }
 
             //cb
             let cb = (p) => {
@@ -326,9 +358,8 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
                 return tEnd !== null &amp;&amp; Date.now() >= tEnd
             }
 
-            //downloadOne, 單一檔案之逐次嘗試, 回傳{ ok, attempts, msg }, 重新連線失敗或殘檔刪不掉時往上拋
-            let downloadOne = async(name, rpath) => {
-                let fpLocal = `${fdDwStorageTemp}/${name}`
+            //downloadOne, 單一檔案之逐次嘗試, fpLocal須為splitNames核對通過之路徑, 回傳{ ok, attempts, msg }, 重新連線失敗或殘檔刪不掉時往上拋
+            let downloadOne = async(name, rpath, fpLocal) => {
                 let attempt = 0
                 while (true) {
                     attempt++
@@ -384,25 +415,25 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
             let n = 0
             let rows = []
             let failed = []
-            for (let i = 0; i &lt; size(items); i++) {
-                let name = items[i].name
+            for (let i = 0; i &lt; size(targets); i++) {
+                let { name, fp } = targets[i]
                 let rpath = `${String(fdRemote).replace(/\/+$/, '')}/${name}` //去除資料夾尾端之斜線避免連續斜線
 
                 //整輪逾時, 本檔與其後檔案皆不再下載, 視為失敗
                 if (isExpired()) {
-                    for (let j = i; j &lt; size(items); j++) {
-                        let nameJ = items[j].name
+                    for (let j = i; j &lt; size(targets); j++) {
+                        let nameJ = targets[j].name
                         failed.push({ name: nameJ, rpath: `${String(fdRemote).replace(/\/+$/, '')}/${nameJ}`, attempts: 0, msg: `timeRound exceeded` })
                     }
-                    srLogError({ event: 'ftp.syncToLocal', length: size(items) - i, msg: `timeRound exceeded` })
+                    srLogError({ event: 'ftp.syncToLocal', length: size(targets) - i, msg: `timeRound exceeded` })
                     if (trace) {
-                        trace('expired', { num: size(items) - i })
+                        trace('expired', { num: size(targets) - i })
                     }
                     break
                 }
 
                 //downloadOne
-                let r = await downloadOne(name, rpath)
+                let r = await downloadOne(name, rpath, fp)
 
                 //save
                 if (r.ok) {
@@ -419,7 +450,14 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
 
             }
 
-            //check, 有檔案須下載而全部失敗, 視為整輪失敗, 不交出空清單當成功
+            //名稱被拒之檔列入failed(排於下載失敗者之後), name與rpath為空字串
+            for (let [names, msg] of rejected) {
+                for (let i = 0; i &lt; size(names); i++) {
+                    failed.push({ name: '', rpath: '', attempts: 0, msg })
+                }
+            }
+
+            //check, 有檔案須下載而全部失敗(含名稱皆被拒), 視為整輪失敗, 不交出空清單當成功
             if (size(items) > 0 &amp;&amp; n === 0) {
                 let err = new Error(`all ${size(items)} files failed to download: ${failed[0].msg}`)
                 err.failed = failed
@@ -535,10 +573,11 @@ let downloadFiles = async(st, fdDwStorageTemp, opt = {}) => {
         return reject(errTemp)
     }
 
-    return { files, failed: failedDw }
+    return { files, failed: failedDw, namesRejected }
 }
 
 
+export { downloadFilesCore }
 export default downloadFiles
 </code></pre>
         </article>
@@ -554,7 +593,7 @@ export default downloadFiles
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Sat Nov 28 2026 21:54:06 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 4.0.5</a> on Sun Nov 29 2026 00:31:52 GMT+0800 (台北標準時間) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
 </footer>
 
 <script>prettyPrint();</script>

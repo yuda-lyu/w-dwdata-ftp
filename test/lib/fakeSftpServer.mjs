@@ -25,6 +25,7 @@ let { STATUS_CODE } = utils.sftp
  * @param {Boolean} [opt.failLs=false] 輸入是否令列舉資料夾(OPENDIR)失敗之布林值，用以模擬ls失敗，預設false
  * @param {Boolean} [opt.denyAuth=false] 輸入是否拒絕所有認證之布林值，用以模擬(重新)連線失敗，預設false
  * @param {String} [opt.stallOn=null] 輸入下載停滯之檔名字串，客戶端讀取該檔之任何區塊時伺服器皆不回應(連線維持)，用以模擬下載逾時，預設null代表不停滯
+ * @param {Array} [opt.virtual=[]] 輸入虛擬檔案陣列，各元素為{ name, content, fail }，列舉根目錄時附加於清單(name原樣回報，可為任意字串)，STAT、LSTAT、OPEN依名稱回應其內容，fail為true時OPEN回覆失敗；不讀寫實體檔案，預設[]
  * @returns {Promise} 回傳Promise，resolve回傳伺服器物件，內含實際監聽port正整數、關閉伺服器函數close與執行期變更故障設定之函數setFault(物件，鍵同breakOn、breakAtBytes、breakTimes、failLs、denyAuth、stallOn，未給之鍵不變)
  */
 let fakeSftpServer = async(opt = {}) => {
@@ -49,6 +50,25 @@ let fakeSftpServer = async(opt = {}) => {
         failLs: opt.failLs === true,
         denyAuth: opt.denyAuth === true,
         stallOn: opt.stallOn || null,
+        virtual: Array.isArray(opt.virtual) ? opt.virtual : [],
+    }
+
+    //findVirtual, 依指令之路徑找虛擬檔案: 先比原樣('./name'或'name'), 再比解析後之路徑(解析為根目錄者不比)
+    let findVirtual = (p) => {
+        let v = fault.virtual.find((o) => p === `./${o.name}` || p === o.name)
+        if (v) {
+            return v
+        }
+        let rp = path.posix.resolve('/', p)
+        if (rp === '/') {
+            return null
+        }
+        return fault.virtual.find((o) => path.posix.resolve('/', `./${o.name}`) === rp) || null
+    }
+
+    //attrsVirtual, 虛擬檔案之屬性(一般檔案)
+    let attrsVirtual = (v) => {
+        return { mode: 0o100644, uid: 0, gid: 0, size: Buffer.byteLength(v.content), atime: 1700000000, mtime: 1700000000 }
     }
 
     //brokenClients, 已被中斷之連線, 每條連線至多計1次中斷
@@ -96,6 +116,10 @@ let fakeSftpServer = async(opt = {}) => {
 
         //onStat, STAT與LSTAT行為相同, 因不支援連結檔
         let onStat = (id, p) => {
+            let v = findVirtual(p)
+            if (v) {
+                return sftp.attrs(id, attrsVirtual(v))
+            }
             try {
                 sftp.attrs(id, toAttrs(fs.statSync(toReal(p))))
             }
@@ -115,6 +139,9 @@ let fakeSftpServer = async(opt = {}) => {
 
         sftp.on('FSTAT', (id, h) => {
             let hd = handles[h.toString()]
+            if (hd && hd.type === 'virtual') {
+                return sftp.attrs(id, attrsVirtual(hd.v))
+            }
             if (!hd || hd.type !== 'file') {
                 return sftp.status(id, STATUS_CODE.FAILURE)
             }
@@ -150,10 +177,27 @@ let fakeSftpServer = async(opt = {}) => {
                     attrs: toAttrs(stat),
                 }
             })
+            if (hd.rp === fdRoot) {
+                names.push(...fault.virtual.map((v) => ({
+                    filename: v.name,
+                    longname: `-rw-r--r-- 1 user user ${Buffer.byteLength(v.content)} Jan 1 00:00 ${v.name}`,
+                    attrs: attrsVirtual(v),
+                })))
+            }
             sftp.name(id, names)
         })
 
         sftp.on('OPEN', (id, p) => {
+            let v = findVirtual(p)
+            if (v) {
+                if (v.fail === true) {
+                    return sftp.status(id, STATUS_CODE.FAILURE)
+                }
+                let key = `v${nHandle}`
+                nHandle += 1
+                handles[key] = { type: 'virtual', v }
+                return sftp.handle(id, Buffer.from(key))
+            }
             try {
                 let fd = fs.openSync(toReal(p), 'r') //唯讀
                 let key = `f${nHandle}`
@@ -168,6 +212,13 @@ let fakeSftpServer = async(opt = {}) => {
 
         sftp.on('READ', (id, h, offset, len) => {
             let hd = handles[h.toString()]
+            if (hd && hd.type === 'virtual') {
+                let buf = Buffer.from(hd.v.content).subarray(offset, offset + len)
+                if (buf.length === 0) {
+                    return sftp.status(id, STATUS_CODE.EOF)
+                }
+                return sftp.data(id, buf)
+            }
             if (!hd || hd.type !== 'file') {
                 return sftp.status(id, STATUS_CODE.FAILURE)
             }
@@ -263,6 +314,9 @@ let fakeSftpServer = async(opt = {}) => {
         }
         if ('stallOn' in o) {
             fault.stallOn = o.stallOn || null
+        }
+        if ('virtual' in o) {
+            fault.virtual = Array.isArray(o.virtual) ? o.virtual : []
         }
     }
 

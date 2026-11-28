@@ -28,7 +28,8 @@ import fsTreeFolder from 'wsemi/src/fsTreeFolder.mjs'
 import fsTreeFolderWithHash from 'wsemi/src/fsTreeFolderWithHash.mjs'
 import fsGetFileBasicHash from 'wsemi/src/fsGetFileBasicHash.mjs'
 import WDwdataBuilder from 'w-dwdata-builder/src/WDwdataBuilder.mjs'
-import downloadFiles from './downloadFiles.mjs'
+import { downloadFilesCore } from './downloadFiles.mjs'
+import chkServerName from './chkServerName.mjs'
 
 
 /**
@@ -39,6 +40,8 @@ import downloadFiles from './downloadFiles.mjs'
  * 執行階段最新數據放置於fdDwStorageTemp，前次數據放置於fdDwStorage，下載完成之輪於結束前會將fdDwStorageTemp內未變更與已處理成功之檔案搬入fdDwStorage(全量模式為鏡像同步，增量模式為複製)，再清空fdDwStorageTemp；本輪取消(結果之msgCancel有值，例如取得既有數據或比對階段錯誤、'no difference')時不搬移，fdDwStorage維持前次內容，僅清空fdDwStorageTemp
  *
  * 下載階段：逐檔下載，某檔失敗時重新連線後重試(opt.retry)，重試用盡之檔不視為整輪失敗，僅不納入本輪新下載檔案(全量模式沿用fdDwStorage內前次檔案，視為未變更，不會被當成已刪除)；連線、ls失敗或全部檔案皆失敗則取消該輪，詳見downloadFiles
+ *
+ * 伺服器回報之名稱不能原樣存為本機檔名者(判準見downloadFiles)不下載、不寫入任何檔；全量模式下fdDwStorage第1層若有指向同一本機檔之前次檔案(Windows檔名不分大小寫，其他平台須完全相同)，同樣沿用之(視為未變更)
  *
  * 主階段(funAdd、funModify、funRemove)逐項處理，某項拋錯或reject不中止本輪，其餘項照常處理(w-data-scheduler 1.0.77起)。是否處理成功以排程器交來之本輪結果success為準(與w-dwdata-builder更新fdDwCurrent一致)：未列於success之新增/變更檔不會搬入fdDwStorage，未列於success之刪除檔不會自fdDwStorage移除，含處理失敗者，以及函數成功而其後排程器之任務狀態更新失敗者(列於failed，msg為'failed to update task state')；下輪比對仍有差異而再處理，故為至少一次語意，funAdd、funModify、funRemove須可重複執行
  *
@@ -358,8 +361,8 @@ let WDwdataFtp = async(st, opt = {}) => {
     //funDownloadDef
     let funDownloadDef = async() => {
 
-        //rDw, 下載所得, files為完整下載之新增檔案清單(檔案放置於fdDwStorageTemp內), failed為重試用盡仍失敗之檔案清單
-        let rDw = await downloadFiles(st, fdDwStorageTemp, {
+        //rDw, 下載所得, files為完整下載之新增檔案清單(檔案放置於fdDwStorageTemp內), failed為重試用盡仍失敗與名稱被拒(name為空字串)之檔案清單, namesRejected為名稱被拒之伺服器回報名稱
+        let rDw = await downloadFilesCore(st, fdDwStorageTemp, {
             srLog,
             ...optDw,
         })
@@ -382,6 +385,23 @@ let WDwdataFtp = async(st, opt = {}) => {
                     srLogInfo({ event: 'keep-previous-file', name: v.name, msg: 'done' })
                 }
             })
+            //名稱被拒者, 僅沿用fdDwStorage第1層內指向同一本機檔之前次檔案(判定見chkServerName.namesKeep); 組路徑所用之名稱取自本機列舉, 伺服器回報之名稱只用於比對, 紀錄不含名稱
+            let vfpsPrev = filter(fsTreeFolder(fdDwStorage, { levelLimit: 1 }), (v) => {
+                return !v.isFolder
+            })
+            let namesKeep = new Set(chkServerName.namesKeep(map(vfpsPrev, 'name'), rDw.namesRejected))
+            each(vfpsPrev, (v) => {
+                if (!namesKeep.has(v.name)) {
+                    return
+                }
+                let r = fsCopyFile(v.path, `${fdDwStorageTemp}/${v.name}`)
+                if (r.error) {
+                    throw new Error(r.error)
+                }
+            })
+            if (namesKeep.size > 0) {
+                srLogInfo({ event: 'keep-previous-file', num: namesKeep.size, msg: 'done' })
+            }
             vfps = filter(fsTreeFolder(fdDwStorageTemp, { levelLimit: 1 }), (v) => {
                 return !v.isFolder //僅使用檔案
             })

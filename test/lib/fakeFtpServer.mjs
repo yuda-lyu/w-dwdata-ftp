@@ -22,6 +22,7 @@ import path from 'path'
  * @param {Integer} [opt.truncateRetrTimes=Infinity] 輸入truncateRetr最多中斷之次數，用盡後該檔即正常提供，預設Infinity(每次皆中斷)
  * @param {Boolean} [opt.failLs=false] 輸入是否令列舉資料夾(STAT資料夾)失敗之布林值，用以模擬ls失敗，預設false
  * @param {String} [opt.failLsText=''] 輸入failLs回覆550時附加之文字字串，用以模擬伺服器於錯誤回覆內帶入帳密等外來文字，預設''
+ * @param {Array} [opt.virtual=[]] 輸入虛擬檔案陣列，各元素為{ name, content, fail }，列舉根目錄時附加於清單(name原樣回報，可為任意字串，不得含換行)，MLST、SIZE、RETR依名稱回應其內容，fail為true時RETR回覆425；不讀寫實體檔案，預設[]
  * @returns {Promise} 回傳Promise，resolve回傳伺服器物件，內含實際監聽port正整數、關閉伺服器函數close與執行期變更故障設定之函數setFault(物件，鍵同failRetr、failRetrTimes、failLs，未給之鍵不變)
  */
 let fakeFtpServer = async (opt = {}) => {
@@ -50,6 +51,20 @@ let fakeFtpServer = async (opt = {}) => {
         truncateRetrTimes: Number.isInteger(opt.truncateRetrTimes) ? opt.truncateRetrTimes : Infinity,
         failLs: opt.failLs === true,
         failLsText: typeof opt.failLsText === 'string' ? opt.failLsText : '',
+        virtual: Array.isArray(opt.virtual) ? opt.virtual : [],
+    }
+
+    //findVirtual, 依指令之路徑引數找虛擬檔案: 先比原樣('./name'或'name'), 再比解析後之路徑(解析為根目錄者不比)
+    let findVirtual = (cwd, arg) => {
+        let v = fault.virtual.find((o) => arg === `./${o.name}` || arg === o.name)
+        if (v) {
+            return v
+        }
+        let rp = path.posix.resolve(cwd, arg || '.')
+        if (rp === '/') {
+            return null
+        }
+        return fault.virtual.find((o) => path.posix.resolve(cwd, `./${o.name}`) === rp) || null
     }
 
     //sockets, 記錄所有控制與數據socket, 供close時強制銷毀
@@ -159,12 +174,36 @@ let fakeFtpServer = async (opt = {}) => {
                     return
                 }
                 lines = lsLines(rp)
+                if (rp === fdRoot) {
+                    lines.push(...fault.virtual.map((v) => ` -rw-r--r-- 1 ftp ftp ${Buffer.byteLength(v.content)} Jan 01 00:00 ${v.name}`))
+                }
             }
             else {
                 let name = path.posix.basename(path.posix.resolve('/', arg))
                 lines = [` -rw-r--r-- 1 ftp ftp ${st.size} Jan 01 00:00 ${name}`]
             }
             socket.write(`211-Status of ${arg}\r\n${lines.map((l) => l + '\r\n').join('')}211 End\r\n`)
+        }
+        else if (cmd === 'MLST' && findVirtual(state.cwd, arg)) {
+            socket.write(`250-Listing ${arg}\r\n type=file;modify=20240101000000.000; ${arg}\r\n250 End\r\n`)
+        }
+        else if (cmd === 'SIZE' && findVirtual(state.cwd, arg)) {
+            socket.write(`213 ${Buffer.byteLength(findVirtual(state.cwd, arg).content)}\r\n`)
+        }
+        else if (cmd === 'RETR' && findVirtual(state.cwd, arg)) {
+            let v = findVirtual(state.cwd, arg)
+            if (v.fail === true) {
+                closeDsrv(state)
+                socket.write('425 can not open data connection\r\n')
+                return
+            }
+            socket.write('150 opening data connection\r\n')
+            let ds = await waitDs(state)
+            ds.once('close', () => {
+                socket.write('226 transfer complete\r\n')
+                closeDsrv(state)
+            })
+            ds.end(Buffer.from(v.content))
         }
         else if (cmd === 'MLST') {
             let rp = resolveP(state.cwd, arg)
@@ -324,6 +363,9 @@ let fakeFtpServer = async (opt = {}) => {
         }
         if ('failLs' in o) {
             fault.failLs = o.failLs === true
+        }
+        if ('virtual' in o) {
+            fault.virtual = Array.isArray(o.virtual) ? o.virtual : []
         }
     }
 

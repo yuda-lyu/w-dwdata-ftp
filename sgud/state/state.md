@@ -18,12 +18,13 @@
 | `WDwdataFtp` 只搬入已處理成功者 | R-WD-02~04 | 已做(成功以本輪結果 `success` 判定,任務狀態更新失敗之項不搬入、下輪重試;取消之輪不搬移;至少一次語意;單項失敗不中止本輪,其餘項照常處理並搬入) | 同上 |
 | opt 轉交與自身檢測 | R-WD-05 | 已做 | 同上 |
 | 使用端 `funBeforeEnd` 收到本輪結果 `{ success, failed, msgCancel }` | R-WD-06 | 已做(搬移後呼叫;取消之輪亦呼叫) | 同上 |
-| wsemi 列舉函數第 2 參數(`{ levelLimit: 1 }`,僅第 1 層) | R-WS-01~03 | 已做:`src` 3 處與測試 8 處(2026-11-26);3 處 `src` 站點各有層數語意測試 | 同上(4 案) |
+| wsemi 列舉函數第 2 參數(`{ levelLimit: 1 }`,僅第 1 層) | R-WS-01~03 | 已做:`src` 4 處與測試 8 處(2026-11-26、2026-11-28);4 處 `src` 站點各有層數語意測試 | 同上(4 案)、`unit-serverNameDownload`(1 案) |
+| 伺服器回報之名稱用於本機路徑前檢查(不合者不下載、列入 `failed` 且不回顯;全量模式沿用同名前次檔案) | R-SN-01~05 | 已做(2026-11-29,排程第 718 項,尚未發布);判準依 w-ftp 1.0.82 之 `syncToLocal`,反斜線於各平台皆拒;非 Windows 之整合期望值未實機跑 | `test/unit-serverName.test.mjs`、`test/unit-serverNameDownload.test.mjs`(假伺服器 `virtual` 項目) |
 
 ## 依賴與版本
 
-- `w-ftp ^1.0.80`(1.0.76 起其內部列舉已用 wsemi 新簽章);`wsemi ^1.9.83`(列舉函數第 2 參數改為 `opt`〔1.9.80〕;公開 `getOptReader`〔1.9.82〕);`w-dwdata-builder ^1.1.46`(帶 `w-data-scheduler` 1.0.77:單項失敗不中止本輪、`funBeforeEnd` 與 `end` 收本輪結果;`fdDwCurrent` 只收處理成功之項)。
-- 套件 `version` 本輪未動(現為 1.1.47;破壞性變更由發布流程決定版號)。
+- `w-ftp ^1.0.82`(1.0.76 起其內部列舉已用 wsemi 新簽章);`wsemi ^1.9.83`(列舉函數第 2 參數改為 `opt`〔1.9.80〕;公開 `getOptReader`〔1.9.82〕);`w-dwdata-builder ^1.1.46`(帶 `w-data-scheduler` 1.0.77:單項失敗不中止本輪、`funBeforeEnd` 與 `end` 收本輪結果;`fdDwCurrent` 只收處理成功之項)。
+- 套件 `version` 本輪未動(現為 1.1.49;破壞性變更由發布流程決定版號)。
 
 ## 最近一次驗證(2026-11-26)
 
@@ -39,6 +40,10 @@
 - 2026-11-28(搬移改依本輪結果 `success` 判定、取消之輪不搬移):新增 10 案對改前 `src` 全紅、改後全綠;`npm test` 101 案全綠;受影響之 24 案連跑 20 次皆 0 失敗;植入 9 項單點變異(改回自記 id、`success` 與 `failed` 對調、忽略 `msgCancel`、取消不清暫存夾、漏 `modify`、漏 `remove`、不分成敗、取消判定移位、`failed` 之變更不另列未處理)全被殺(改前之測試檔對「改回自記 id」「忽略 `msgCancel`」「不清暫存夾」「`failed` 之變更」4 項存活);R-WS-01 比對基準列舉站點之 2 項變異仍被殺;eslint 0 錯誤;`.jsdoc` 無 ERROR。
 
 ## 已知缺口與待辦
+
+- 名稱檢查不涵蓋 macOS 之大小寫與 Unicode 正規化衝突、NTFS 8.3 短名(同 w-ftp);w-ftp 若對外提供名稱檢查,改用之並刪 `src/chkServerName.mjs` 之判準部分。
+- 以鏡像方式使用 `downloadFiles` 之使用端無法得知被拒者為哪些檔(`name` 為空字串),含此類條目之輪不應據清單刪除既有檔(README〈Breaking changes〉)。
+- 非 Windows:升級前 `fdDwStorage`、`fdDwCurrent` 內若有含 `\` 之檔名須先移除(README〈Breaking changes〉);本套件不自動處理。
 
 - 取消之輪不搬移:自給 `funGetCurrent` 而比對基準領先 `fdDwStorage` 者(取消原因 `'no difference'`),`fdDwStorage` 於下次有差異之輪才更新(R-WD-04)。
 - 自給 `funDownload` 時沒有下載清單,下載檔案不會搬入 `fdDwStorage`(搬移階段記 `error` `no files`)。
